@@ -1,0 +1,10 @@
+struct Person {
+	name: string,
+	age: uint,
+	hair: Hair,
+}
+
+struct Hair {
+	color: u32,
+	type: string
+}

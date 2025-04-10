@@ -1,0 +1,11 @@
+[package]
+name = "wing-rpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+easy-ext = "1.0.2"
+miette = "7.5.0"
+pest = { version = "2.8.0", features = ["miette-error", "pretty-print"] }
+pest_derive = "2.8.0"
+strum = {version = "0.27.1", features=["derive"]}

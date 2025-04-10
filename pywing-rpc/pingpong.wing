@@ -1,0 +1,7 @@
+struct Ping {
+	time: u32
+}
+
+struct Pong {
+	time: u32
+}
