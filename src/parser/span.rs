@@ -13,5 +13,3 @@ pub struct Spanned<T> {
     #[deref]
     value: T,
 }
-
-pub use self::Spanned as S;

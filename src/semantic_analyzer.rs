@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use miette::{Diagnostic, SourceOffset, SourceSpan};
 use nucleo_matcher::{Matcher, pattern::Atom};
 use pest::Span;
 use thiserror::Error;
 
-use crate::parser::{Document, UserType};
+use crate::parser::Document;
 
 type R = miette::Result<()>;
 

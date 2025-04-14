@@ -1,5 +1,5 @@
 use pest::{
-    Parser, RuleType, Span,
+    Parser, RuleType,
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
@@ -12,7 +12,6 @@ struct WingParser;
 mod rules;
 mod span;
 use rules::ParseItem;
-pub use span::*;
 
 #[easy_ext::ext]
 impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
@@ -97,7 +96,7 @@ pub struct StructField {
 }
 
 impl StructField {
-    fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
+    pub fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
         Self {
             name: name.into(),
             type_: type_.into(),
