@@ -1,5 +1,5 @@
 use pest::{
-    Parser, RuleType,
+    Parser, RuleType, Span,
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
@@ -9,8 +9,10 @@ use strum::EnumString;
 #[grammar = "./idl.pest"]
 struct WingParser;
 
-mod macros;
-use macros::*;
+mod rules;
+mod span;
+use rules::ParseItem;
+pub use span::*;
 
 #[easy_ext::ext]
 impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
@@ -35,7 +37,10 @@ impl<'i> Pairs<'i, Rule> {
 }
 pub fn parse_document(doc: &str) -> miette::Result<Document> {
     let mut tokens = WingParser::parse2(Rule::document, doc)?;
-    Ok(tokens.next_item()?)
+    // ParseItem assumes is has been given a parent tree.
+    // Despite Document being the root item, it needs a fake root to attach itself onto.
+    let doc = tokens.next_item()?;
+    Ok(doc)
 }
 
 #[derive(Debug, Clone, PartialEq, EnumString)]
@@ -62,69 +67,21 @@ pub enum AtomicType {
     Binary,
 }
 
-trait ParseItem: Sized {
-    const RULE: Rule;
-    fn parse(rule: Pair<Rule>) -> miette::Result<Self>;
-}
-
-impl_parse_atom! {
-    #[rule(ident)]
-    fn parse(self: String, pair: Pair<Rule>) -> Self {
-        pair.as_str().to_string()
-    }
-}
-
-impl_parse_composite! {
-    #[rule(r#type)]
-    fn parse(self: Type, pairs: Pairs<Rule>) -> Self {
-        if pairs.peek()
-            .map(|pair| pair.as_rule() == Self::RULE)
-            .unwrap_or(false) {
-            Self::List(Box::new(pairs.next_item()?))
-        } else {
-            let tname = pairs.next2().as_str();
-            tname.parse::<AtomicType>()
-                .map(Type::Builtin)
-                .unwrap_or_else(|_| Type::User(tname.to_owned()))
-        }
-    }
-
-    #[rule(struct_field)]
-    fn parse(self: StructField, pairs: Pairs<Rule>) -> Self {
-        StructField {
-            name: pairs.next_item()?,
-            type_: pairs.next_item()?,
-        }
-    }
-    #[rule(struct_body)]
-    fn parse(self: Vec<StructField>, pairs: Pairs<Rule>) -> Self {
-        pairs.collect_items()?
-    }
-    #[rule(r#struct)]
-    fn parse(self: Struct, pairs: Pairs<Rule>) -> Self {
-        Struct {
-            name: pairs.next_item()?,
-            fields: pairs.next_item()?,
-        }
-    }
-    #[rule(document)]
-    fn parse(self: Document, pairs: Pairs<Rule>) -> Self {
-        Document {
-            user_types: pairs.collect_items()?
-        }
-    }
-    #[rule(r#enum)]
-    fn parse(self: Enum, pairs: Pairs<Rule>) -> Self {
-
-    }
-
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Builtin(AtomicType),
     List(Box<Type>),
     User(String),
+}
+
+impl Type {
+    pub fn as_user(&self) -> Option<&str> {
+        if let Type::User(tp) = self {
+            Some(tp)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -139,6 +96,15 @@ pub struct StructField {
     pub type_: Type,
 }
 
+impl StructField {
+    fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
+        Self {
+            name: name.into(),
+            type_: type_.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct {
     pub name: String,
@@ -146,22 +112,52 @@ pub struct Struct {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum UserType {
+    Struct(Struct),
+    Enum(Enum),
+}
+
+impl UserType {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Struct(st) => &st.name,
+            Self::Enum(en) => &en.name,
+        }
+    }
+    pub fn children<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = &'a Type>> {
+        match self {
+            Self::Struct(st) => Box::new(st.fields.iter().map(|f| &f.type_)),
+            Self::Enum(en) => Box::new(en.variants.iter()),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        match self {
+            UserType::Struct(st) => st.fields.is_empty(),
+            UserType::Enum(en) => en.variants.is_empty(),
+        }
+    }
+}
+
+impl From<Struct> for UserType {
+    fn from(value: Struct) -> Self {
+        UserType::Struct(value)
+    }
+}
+
+impl From<Enum> for UserType {
+    fn from(value: Enum) -> Self {
+        UserType::Enum(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Document {
-    pub user_types: Vec<Struct>,
+    pub user_types: Vec<UserType>,
 }
 
 #[cfg(test)]
 pub mod test {
     use super::*;
-
-    impl StructField {
-        fn new(name: &str, type_: impl Into<Type>) -> Self {
-            Self {
-                name: s(name),
-                type_: type_.into(),
-            }
-        }
-    }
 
     impl From<AtomicType> for Type {
         fn from(val: AtomicType) -> Self {
@@ -187,13 +183,21 @@ pub mod test {
 
     macro_rules! assert_parse {
         ($left:expr, $right:expr) => {
-            assert_eq!(parse_document($left).unwrap(), $right)
+            assert_parse!($left, $right, Document)
         };
 
-        ($left:expr, $right:expr, $ty:ty) => {
+        ($left:expr, $right:expr, $ty:ty) => {{
             let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
-            let val: $ty = pairs.next_item().unwrap();
+            let val = pairs.next_item::<$ty>().unwrap();
             assert_eq!(val, $right)
+        }};
+    }
+
+    macro_rules! list {
+        ($($arg:expr),* $(,)?) => {
+            vec![
+                $($arg.into()),*
+            ]
         };
     }
 
@@ -209,9 +213,9 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: vec![Struct {
+                user_types: list![Struct {
                     name: s("Person"),
-                    fields: vec![
+                    fields: list![
                         StructField::new("age", AtomicType::U8),
                         StructField::new("name", AtomicType::String),
                         StructField::new("mood", AtomicType::F32),
@@ -235,9 +239,9 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: vec![Struct {
+                user_types: list![Struct {
                     name: s("Person"),
-                    fields: vec![
+                    fields: list![
                         StructField::new("age", AtomicType::U8),
                         StructField::new("name", AtomicType::String),
                         StructField::new("mood", AtomicType::F32),
@@ -266,10 +270,10 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: vec![
+                user_types: list![
                     Struct {
                         name: s("A1"),
-                        fields: vec![
+                        fields: list![
                             StructField::new("darega", AtomicType::U32),
                             StructField::new("omaga", AtomicType::I32),
                             StructField::new("odiga", AtomicType::F32),
@@ -277,7 +281,7 @@ pub mod test {
                     },
                     Struct {
                         name: s("A2"),
-                        fields: vec![
+                        fields: list![
                             StructField::new("lerolero", AtomicType::U8),
                             StructField::new("lepolepo", AtomicType::Int),
                             StructField::new("tibirabirom", AtomicType::USize),
@@ -298,5 +302,24 @@ pub mod test {
     #[test]
     fn parse_list_nested() {
         assert_parse!("[[int]]", Type::list(Type::list(AtomicType::Int)), Type);
+    }
+
+    #[test]
+    fn test_simple_enum() {
+        assert_parse!(
+            "
+                enum Color {
+                    RGB,
+                    HSLV,
+                    Gray
+                }
+            ",
+            Document {
+                user_types: list![Enum {
+                    name: s("Color"),
+                    variants: list![Type::from("RGB"), Type::from("HSLV"), Type::from("Gray"),]
+                }]
+            }
+        )
     }
 }

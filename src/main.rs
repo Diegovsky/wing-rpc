@@ -2,9 +2,11 @@ use std::{collections::VecDeque, ffi::OsString, io::BufWriter, path::PathBuf};
 
 use emitter::{Emitter, PyEmitter, RustEmitter};
 use parser::parse_document;
+use semantic_analyzer::analyze_errors;
 
 mod emitter;
 mod parser;
+mod semantic_analyzer;
 
 fn main() {
     let mut args: VecDeque<OsString> = std::env::args_os().skip(1).collect();
@@ -25,6 +27,10 @@ fn main() {
     }
     let input_data = std::fs::read_to_string(input).expect("Failed to read input file");
     let document = parse_document(&*input_data).expect("Failed to parse document");
+    if let Err(err) = analyze_errors(&document) {
+        eprintln!("{:?}", err.with_source_code(dbg!(input_data)));
+        return;
+    }
     let mut output: &mut dyn std::io::Write = if output.file_stem().unwrap() != "-" {
         &mut std::fs::File::create(output)
             .map(BufWriter::new)

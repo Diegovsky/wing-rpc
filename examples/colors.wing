@@ -1,0 +1,22 @@
+
+struct Rgb {
+	r: u8,
+	g: u8,
+	b: u8
+}
+
+struct HSL {
+	h: f32,
+	s: f32,
+	l: f32,
+}
+
+struct Gray {
+	value: f32,
+}
+
+enum Color {
+    Rgb,
+    HSLV,
+    Gray
+}

@@ -1,4 +1,4 @@
-document = { (WHITESPACE* ~ (struct | enum))+ ~ WHITESPACE* }
+document = { (WHITESPACE* ~ user_type)+ ~ WHITESPACE* }
 
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
@@ -15,7 +15,9 @@ struct_body = {
 struct = {"struct" ~ ident ~ struct_body}
 
 enum_body = {
-    "{" ~ type ~ (SEP ~ type)* ~ "}" |
+    "{" ~ type ~ (SEP ~ type)* ~ (SEP)?  ~ "}" |
     "{" ~ "}"   
 }
 enum = { "enum" ~ ident ~ enum_body }
+
+user_type = { struct | enum }
