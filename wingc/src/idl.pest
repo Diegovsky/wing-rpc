@@ -7,7 +7,7 @@ SEP = _{";" | "," }
 ident = {(LETTER | NUMBER)+}
 type = {ident | ("["~ type ~ "]")}
 
-struct_field = {ident ~ ":" ~ type}
+struct_field = { ident ~ ":" ~ type}
 struct_body = {
     "{" ~ struct_field ~ (SEP ~ struct_field)* ~ (SEP)? ~ "}" |   
     "{" ~ "}"
@@ -15,7 +15,7 @@ struct_body = {
 struct = {"struct" ~ ident ~ struct_body}
 
 enum_body = {
-    "{" ~ type ~ (SEP ~ type)* ~ (SEP)?  ~ "}" |
+    "{" ~ struct_field ~ (SEP ~ struct_field)* ~ (SEP)?  ~ "}" |
     "{" ~ "}"   
 }
 enum = { "enum" ~ ident ~ enum_body }

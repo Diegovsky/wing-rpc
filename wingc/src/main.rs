@@ -28,7 +28,7 @@ fn main() {
     let input_data = std::fs::read_to_string(input).expect("Failed to read input file");
     let document = parse_document(&*input_data).expect("Failed to parse document");
     if let Err(err) = analyze_errors(&document) {
-        eprintln!("{:?}", err.with_source_code(dbg!(input_data)));
+        eprintln!("{:?}", err.with_source_code(input_data));
         return;
     }
     let mut output: &mut dyn std::io::Write = if output.file_stem().unwrap() != "-" {

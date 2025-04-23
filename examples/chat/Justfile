@@ -1,0 +1,4 @@
+
+gen-schemas:
+    cargo run -p wing-compiler -- chat.wing src/ipc.rs
+    cargo run -p wing-compiler -- chat.wing client/ipc.py

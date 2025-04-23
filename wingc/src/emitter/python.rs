@@ -7,7 +7,7 @@ use super::Emitter;
 #[derive(Debug, PartialEq, Clone)]
 pub struct PyEmitter {
     seen: HashSet<String>,
-    ident: usize,
+    indent: usize,
 }
 
 type R = std::io::Result<()>;
@@ -15,12 +15,14 @@ type R = std::io::Result<()>;
 impl PyEmitter {
     pub fn new() -> Self {
         Self {
-            ident: 0,
+            indent: 0,
             seen: Default::default(),
         }
     }
     fn emit_header(&self, f: &mut dyn Write) -> R {
-        write!(f, "from pydantic import BaseModel as Schema\n")?;
+        write!(f, "from wing_rpc import Schema, Enum\n")?;
+        write!(f, "from typing import ClassVar\n")?;
+        write!(f, "from enum import StrEnum\n")?;
         write!(f, "\n\n")
     }
     fn get_type_name(&self, typ: &Type) -> String {
@@ -47,15 +49,17 @@ impl PyEmitter {
                 | AtomicType::I32
                 | AtomicType::I64
                 | AtomicType::ISize
-                | AtomicType::Int => "int".to_string(),
-                AtomicType::F32 | AtomicType::F64 => "float".to_string(),
-                AtomicType::String => "str".to_string(),
-                AtomicType::Binary => "bytes".to_string(),
-            },
+                | AtomicType::Int => "int",
+                AtomicType::F32 | AtomicType::F64 => "float",
+                AtomicType::Bool => "bool",
+                AtomicType::String => "str",
+                AtomicType::Binary => "bytes",
+            }
+            .to_string(),
         }
     }
     fn ident(&self, f: &mut dyn Write) -> R {
-        write!(f, "{}", " ".repeat(self.ident * 4))
+        write!(f, "{}", " ".repeat(self.indent * 4))
     }
     fn emit_field<'a>(
         &self,
@@ -82,31 +86,62 @@ impl PyEmitter {
         variants: impl IntoIterator<Item = (impl AsRef<str>, impl AsRef<str>)>,
     ) -> R {
         self.ident(f)?;
-        write!(f, "class {}(Schema):\n", name)?;
-        self.ident += 1;
+        write!(f, "class {}(StrEnum):\n", name)?;
+        self.indent += 1;
         for (name, value) in variants {
-            self.emit_field(f, name.as_ref(), None, value.as_ref())?;
+            self.emit_field(
+                f,
+                name.as_ref(),
+                None,
+                format!("'{}'", value.as_ref()).as_str(),
+            )?;
         }
-        self.ident -= 1;
+        self.indent -= 1;
         Ok(())
     }
+    fn get_base_class(&self, utype: &UserType) -> &str {
+        match utype {
+            UserType::Struct(_) => "Schema",
+            UserType::Enum(_) => "Enum",
+        }
+    }
     fn emit_user_type(&mut self, f: &mut dyn Write, utype: &UserType) -> R {
+        // self.ident(f)?;
+        // write!(f, "@dataclass\n")?;
         self.ident(f)?;
-        write!(f, "class {}(Schema):\n", utype.name())?;
+        write!(
+            f,
+            "class {}({}):\n",
+            utype.name(),
+            self.get_base_class(utype)
+        )?;
         if utype.is_empty() {
             self.ident(f)?;
             write!(f, "pass\n")?;
         } else {
-            self.ident += 1;
+            self.indent += 1;
             match utype {
                 UserType::Struct(st) => {
-                    for StructField { name, type_ } in &st.fields {
+                    let match_args = format!(
+                        "({},)",
+                        st.fields
+                            .iter()
+                            .map(|field| format!("'{}'", field.name))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    self.emit_field(f, "__match_args__", "ClassVar[tuple]", match_args.as_ref())?;
+                    for field in &st.fields {
+                        let StructField { name, typ: type_ } = &field.value;
                         self.emit_field(f, name.as_str(), self.get_type_name(type_).as_str(), None)?
                     }
                 }
                 UserType::Enum(en) => {
-                    let varnames: Vec<String> =
-                        en.variants.iter().map(|t| self.get_type_name(t)).collect();
+                    let varnames: Vec<String> = en
+                        .variants
+                        .iter()
+                        .map(|t| self.get_type_name(&t.typ))
+                        .collect();
                     self.emit_python_strenum(
                         f,
                         "Tag",
@@ -116,7 +151,7 @@ impl PyEmitter {
                     self.emit_field(f, "value", varnames.join(" | ").as_str(), None)?;
                 }
             }
-            self.ident -= 1;
+            self.indent -= 1;
         }
         write!(f, "\n\n")?;
         self.seen.insert(utype.name().to_owned());

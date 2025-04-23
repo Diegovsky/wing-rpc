@@ -1,17 +1,20 @@
+use derive_more::From;
 use pest::{
     Parser, RuleType,
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
-use strum::EnumString;
+use span::Spanned;
+use strum::{EnumString, IntoStaticStr};
 
 #[derive(Parser, Debug, Clone, PartialEq)]
 #[grammar = "./idl.pest"]
 struct WingParser;
 
 mod rules;
-mod span;
+pub mod span;
 use rules::ParseItem;
+pub use span::{S, SVec};
 
 #[easy_ext::ext]
 impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
@@ -42,7 +45,7 @@ pub fn parse_document(doc: &str) -> miette::Result<Document> {
     Ok(doc)
 }
 
-#[derive(Debug, Clone, PartialEq, EnumString)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
 pub enum AtomicType {
     // Specific Int Sizes
@@ -62,15 +65,67 @@ pub enum AtomicType {
     Int,
     F32,
     F64,
+    Bool,
     String,
     Binary,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
     Builtin(AtomicType),
     List(Box<Type>),
     User(String),
+}
+
+impl Type {
+    pub fn get_variant_name(&self) -> String {
+        match self {
+            Type::User(name) => name.to_string(),
+            Type::List(inner) => format!("ListOf{}", inner.get_variant_name()),
+            Type::Builtin(tp) => format!("{:?}", tp),
+        }
+    }
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Builtin(bt) => write!(f, "{}", <&str>::from(bt)),
+            Self::List(inner) => write!(f, "List<{}>", inner),
+            Self::User(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+pub type EnumVariant = StructField;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Enum {
+    pub name: String,
+    pub variants: SVec<EnumVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructField {
+    pub name: String,
+    pub typ: Type,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Struct {
+    pub name: String,
+    pub fields: SVec<StructField>,
+}
+
+#[derive(Debug, Clone, From, PartialEq)]
+pub enum UserType {
+    Struct(S<Struct>),
+    Enum(S<Enum>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Document {
+    pub user_types: SVec<UserType>,
 }
 
 impl Type {
@@ -82,40 +137,6 @@ impl Type {
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Enum {
-    pub name: String,
-    pub variants: Vec<Type>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct StructField {
-    pub name: String,
-    pub type_: Type,
-}
-
-impl StructField {
-    pub fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
-        Self {
-            name: name.into(),
-            type_: type_.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Struct {
-    pub name: String,
-    pub fields: Vec<StructField>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum UserType {
-    Struct(Struct),
-    Enum(Enum),
-}
-
 impl UserType {
     pub fn name(&self) -> &str {
         match self {
@@ -123,11 +144,12 @@ impl UserType {
             Self::Enum(en) => &en.name,
         }
     }
-    pub fn children<'a>(&'a self) -> Box<dyn 'a + Iterator<Item = &'a Type>> {
+    pub fn children<'a>(&'a self) -> impl Iterator<Item = S<&'a Type>> {
         match self {
-            Self::Struct(st) => Box::new(st.fields.iter().map(|f| &f.type_)),
-            Self::Enum(en) => Box::new(en.variants.iter()),
+            Self::Struct(st) => st.fields.iter(),
+            Self::Enum(en) => en.variants.iter(),
         }
+        .map(|fd| fd.as_ref().map(|fd| &fd.typ))
     }
     pub fn is_empty(&self) -> bool {
         match self {
@@ -137,25 +159,9 @@ impl UserType {
     }
 }
 
-impl From<Struct> for UserType {
-    fn from(value: Struct) -> Self {
-        UserType::Struct(value)
-    }
-}
-
-impl From<Enum> for UserType {
-    fn from(value: Enum) -> Self {
-        UserType::Enum(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Document {
-    pub user_types: Vec<UserType>,
-}
-
 #[cfg(test)]
 pub mod test {
+    use super::span::Spanned;
     use super::*;
 
     impl From<AtomicType> for Type {
@@ -164,9 +170,29 @@ pub mod test {
         }
     }
 
+    impl From<Struct> for UserType {
+        fn from(value: Struct) -> Self {
+            UserType::Struct(S::new_unspanned(value))
+        }
+    }
+
+    impl From<Enum> for UserType {
+        fn from(value: Enum) -> Self {
+            UserType::Enum(S::new_unspanned(value))
+        }
+    }
+
     impl From<&str> for Type {
         fn from(val: &str) -> Self {
             Type::User(s(val))
+        }
+    }
+    impl StructField {
+        pub fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
+            Self {
+                name: name.into(),
+                typ: type_.into(),
+            }
         }
     }
 
@@ -195,7 +221,7 @@ pub mod test {
     macro_rules! list {
         ($($arg:expr),* $(,)?) => {
             vec![
-                $($arg.into()),*
+                $(Spanned::new_unspanned($arg.into())),*
             ]
         };
     }
@@ -308,15 +334,19 @@ pub mod test {
         assert_parse!(
             "
                 enum Color {
-                    RGB,
-                    HSLV,
-                    Gray
+                    RGB: RGB,
+                    HSLV: HSLV,
+                    Gray: Gray,
                 }
             ",
             Document {
                 user_types: list![Enum {
                     name: s("Color"),
-                    variants: list![Type::from("RGB"), Type::from("HSLV"), Type::from("Gray"),]
+                    variants: list![
+                        StructField::new("RGB", "RGB"),
+                        StructField::new("HSLV", "HSLV"),
+                        StructField::new("Gray", "Gray"),
+                    ]
                 }]
             }
         )

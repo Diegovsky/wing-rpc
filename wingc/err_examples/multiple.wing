@@ -1,0 +1,13 @@
+struct Nope {
+	a: null,
+	b: null,
+	c: null
+}
+
+enum Repeats {
+	int,
+	string,
+	string,
+	int,
+	int
+}

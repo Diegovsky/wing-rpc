@@ -1,0 +1,28 @@
+
+struct Message {
+	username: string,
+	contents: string,
+}
+
+
+struct UserJoined {
+	username: string
+}
+
+struct UserLeft {
+	username: string
+}
+
+enum ChatEvent {
+	Message,
+	UserJoined,
+	UserLeft
+}
+
+struct Login {
+	username: string
+}
+struct SendMessage {
+	contents: string
+}
+

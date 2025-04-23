@@ -64,12 +64,12 @@ fn parse(pairs: Pairs<Rule>) -> Type {
 fn parse(pairs: Pairs<Rule>) -> StructField {
     StructField {
         name: pairs.next_item()?,
-        type_: pairs.next_item()?,
+        typ: pairs.next_item()?,
     }
 }
 #[apply(impl_parse_composite)]
 #[rule(struct_body)]
-fn parse(pairs: Pairs<Rule>) -> Vec<StructField> {
+fn parse(pairs: Pairs<Rule>) -> SVec<StructField> {
     pairs.collect_items()?
 }
 #[apply(impl_parse_composite)]
@@ -91,7 +91,7 @@ fn parse(pairs: Pairs<Rule>) -> Document {
 #[apply(impl_parse_composite)]
 #[ignore(spantree)]
 #[rule(enum_body)]
-fn parse(pairs: Pairs<Rule>) -> Vec<Type> {
+fn parse(pairs: Pairs<Rule>) -> SVec<Type> {
     pairs.collect_items()?
 }
 
@@ -110,8 +110,8 @@ fn parse(pairs: Pairs<Rule>) -> Enum {
 fn parse(pairs: Pairs<Rule>) -> UserType {
     let inner = pairs.next2();
     if inner.as_rule() == Rule::r#struct {
-        UserType::Struct(Struct::parse(inner)?)
+        UserType::Struct(ParseItem::parse(inner)?)
     } else {
-        UserType::Enum(Enum::parse(inner)?)
+        UserType::Enum(ParseItem::parse(inner)?)
     }
 }

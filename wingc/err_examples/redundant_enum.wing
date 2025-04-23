@@ -1,0 +1,5 @@
+enum Message {
+	string,
+	u32,
+	string
+}

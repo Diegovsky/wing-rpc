@@ -1,0 +1,136 @@
+use std::{collections::HashMap, io::Write};
+
+use crate::parser::{AtomicType, Type, UserType};
+
+use super::Emitter;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RustEmitter {
+    indent: usize,
+    user_types: HashMap<String, UserType>,
+}
+
+impl RustEmitter {
+    pub fn new() -> Self {
+        Self {
+            indent: 0,
+            user_types: Default::default(),
+        }
+    }
+    fn indent(&self, f: &mut dyn Write) -> R {
+        write!(f, "{}", " ".repeat(self.indent * 4))
+    }
+    fn emit_header(&self, f: &mut dyn Write) -> R {
+        write!(f, "use serde::{{Serialize, Deserialize}};\n")?;
+        write!(f, "use wing_rpc::Message as WingMessage;\n")?;
+        write!(f, "\n\n")
+    }
+    fn is_ut_partialeq(&self, ut: &UserType) -> bool {
+        ut.children().all(|tp| self.is_partialeq(tp.value))
+    }
+    fn is_partialeq(&self, typ: &Type) -> bool {
+        match typ {
+            Type::Builtin(AtomicType::F32 | AtomicType::F64) => false,
+            Type::Builtin(_) => true,
+            Type::List(tp) => self.is_partialeq(tp),
+            Type::User(ut) => self.is_ut_partialeq(&self.user_types[ut]),
+        }
+    }
+    fn get_type_name(&self, typ: &Type) -> String {
+        match typ {
+            Type::User(name) => name.to_string(),
+            Type::List(inner) => {
+                format!("Vec<{}>", self.get_type_name(inner))
+            }
+            Type::Builtin(tp) => match tp {
+                AtomicType::USize
+                | AtomicType::ISize
+                | AtomicType::U8
+                | AtomicType::U16
+                | AtomicType::U32
+                | AtomicType::U64
+                | AtomicType::I8
+                | AtomicType::I16
+                | AtomicType::I32
+                | AtomicType::I64
+                | AtomicType::F32
+                | AtomicType::Bool
+                | AtomicType::F64 => <&str>::from(tp),
+                AtomicType::UInt => "u32",
+                AtomicType::Int => "i32",
+                AtomicType::String => "String",
+                AtomicType::Binary => "Vec<u8>",
+            }
+            .to_string(),
+        }
+    }
+    fn emit_usertype(&mut self, f: &mut dyn Write, ut: &UserType) -> R {
+        let mut derives = vec!["Debug", "Clone"];
+        if self.is_ut_partialeq(ut) {
+            derives.push("PartialEq");
+        }
+        derives.extend(["Serialize", "Deserialize"]);
+        self.indent(f)?;
+        write!(f, "#[derive({})]\n", derives.join(", "))?;
+        let name = ut.name();
+        self.indent(f)?;
+        write!(f, "pub ")?;
+        match ut {
+            UserType::Struct(st) => {
+                write!(f, "struct {} {{\n", name)?;
+                self.indent += 1;
+                for field in st.fields.iter() {
+                    self.indent(f)?;
+                    write!(
+                        f,
+                        "pub {}: {},\n",
+                        field.name,
+                        self.get_type_name(&field.typ)
+                    )?;
+                }
+                self.indent -= 1;
+                f.write_all(b"}\n\n")?;
+            }
+            UserType::Enum(en) => {
+                write!(f, "enum {} {{\n", name)?;
+                self.indent += 1;
+                for field in en.variants.iter() {
+                    self.indent(f)?;
+                    let name = &*field.name;
+                    let tp = self.get_type_name(&field.typ);
+                    write!(f, "{}({}),\n", name, tp)?;
+                }
+                self.indent -= 1;
+                f.write_all(b"}\n\n")?;
+            }
+        }
+
+        write!(f, "impl<'a> WingMessage<'a> for {name} {{\n")?;
+        self.indent += 1;
+        self.indent(f)?;
+        write!(f, "const NAME: &'static str = \"{name}\";\n")?;
+        self.indent -= 1;
+        write!(f, "}}\n\n")?;
+
+        Ok(())
+    }
+}
+
+type R = std::io::Result<()>;
+
+impl Emitter for RustEmitter {
+    fn emit(&mut self, document: &crate::parser::Document, writer: &mut dyn std::io::Write) -> R {
+        self.emit_header(writer)?;
+        self.user_types.clear();
+        self.user_types.extend(
+            document
+                .user_types
+                .iter()
+                .map(|ut| (ut.name().to_string(), ut.value.clone())),
+        );
+        for ut in document.user_types.iter() {
+            self.emit_usertype(writer, ut)?;
+        }
+        Ok(())
+    }
+}

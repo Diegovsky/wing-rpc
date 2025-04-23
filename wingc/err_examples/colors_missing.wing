@@ -1,11 +1,10 @@
-
 struct Rgb {
 	r: u8,
 	g: u8,
 	b: u8
 }
 
-struct HSL {
+struct HSLV {
 	h: f32,
 	s: f32,
 	l: f32,
@@ -17,6 +16,6 @@ struct Gray {
 
 enum Color {
     Rgb,
-    HSLV,
+    HSL,
     Gray
 }
