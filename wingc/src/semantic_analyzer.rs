@@ -4,7 +4,7 @@ use miette::{Diagnostic, LabeledSpan};
 use nucleo_matcher::{Matcher, pattern::Atom};
 use thiserror::Error;
 
-use crate::parser::{Document, S, Type, UserType};
+use crate::parser::{Document, S, Type};
 
 type R = miette::Result<()>;
 

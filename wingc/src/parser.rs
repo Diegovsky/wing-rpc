@@ -4,7 +4,6 @@ use pest::{
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
-use span::Spanned;
 use strum::{EnumString, IntoStaticStr};
 
 #[derive(Parser, Debug, Clone, PartialEq)]
