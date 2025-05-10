@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use derive_more::{AsRef, Deref, DerefMut};
 use miette::{SourceOffset, SourceSpan};
 
@@ -7,6 +9,18 @@ use super::{Rule, rules::ParseItem};
 pub struct Span {
     pub offset: usize,
     pub length: usize,
+}
+
+impl Span {
+    pub fn end(&self) -> usize {
+        self.offset + self.length
+    }
+}
+
+impl From<Span> for Range<usize> {
+    fn from(value: Span) -> Self {
+        value.offset..value.end()
+    }
 }
 
 impl From<Span> for miette::SourceSpan {

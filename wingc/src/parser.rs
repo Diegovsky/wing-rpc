@@ -1,4 +1,5 @@
 use derive_more::From;
+use miette::bail;
 use pest::{
     Parser, RuleType,
     iterators::{Pair, Pairs},
@@ -36,12 +37,15 @@ impl<'i> Pairs<'i, Rule> {
         self.next().unwrap()
     }
 }
-pub fn parse_document(doc: &str) -> miette::Result<Document> {
-    let mut tokens = WingParser::parse2(Rule::document, doc)?;
-    // ParseItem assumes is has been given a parent tree.
-    // Despite Document being the root item, it needs a fake root to attach itself onto.
-    let doc = tokens.next_item()?;
-    Ok(doc)
+pub fn parse_document(text: &str) -> miette::Result<Document> {
+    let mut tokens = WingParser::parse2(Rule::document, text)?;
+    let doc: S<Document> = tokens.next_item()?;
+    let remaining = text[doc.span.end()..].trim();
+    // Well, if there is remaining doc text, parsing failed.
+    if remaining.len() > 0 {
+        return parse_document(remaining);
+    }
+    Ok(doc.value)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
@@ -96,12 +100,51 @@ impl std::fmt::Display for Type {
     }
 }
 
-pub type EnumVariant = StructField;
+#[derive(Debug, Clone, PartialEq, From)]
+pub enum EnumVariant {
+    NamedVariant(StructField),
+    UserType(UserType),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Enum {
     pub name: String,
-    pub variants: SVec<EnumVariant>,
+    pub definitions: SVec<EnumVariant>,
+}
+
+impl Struct {
+    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
+        std::iter::empty()
+    }
+}
+
+impl UserType {
+    pub fn children_user_types<'a>(&'a self) -> Vec<&'a UserType> {
+        match self {
+            UserType::Enum(en) => en.children_user_types().collect(),
+            UserType::Struct(st) => st.children_user_types().collect(),
+        }
+    }
+}
+
+impl Enum {
+    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
+        self.definitions.iter().filter_map(|def| match &def.value {
+            EnumVariant::UserType(ut) => Some(ut),
+            EnumVariant::NamedVariant(_) => None,
+        })
+    }
+    pub fn variants(&self) -> impl Iterator<Item = S<StructField>> {
+        self.definitions.iter().map(|var| {
+            var.as_ref().map(|var| match var {
+                EnumVariant::NamedVariant(f) => f.clone(),
+                EnumVariant::UserType(ut) => StructField {
+                    name: ut.name().into(),
+                    typ: Type::User(ut.name().into()),
+                },
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -143,17 +186,17 @@ impl UserType {
             Self::Enum(en) => &en.name,
         }
     }
-    pub fn children<'a>(&'a self) -> impl Iterator<Item = S<&'a Type>> {
-        match self {
-            Self::Struct(st) => st.fields.iter(),
-            Self::Enum(en) => en.variants.iter(),
-        }
-        .map(|fd| fd.as_ref().map(|fd| &fd.typ))
+    pub fn children_types<'a>(&'a self) -> impl Iterator<Item = S<Type>> {
+        let iter: Box<dyn Iterator<Item = S<StructField>>> = match self {
+            Self::Struct(st) => Box::new(st.fields.iter().cloned()),
+            Self::Enum(en) => Box::new(en.variants()),
+        };
+        iter.map(|fd| fd.as_ref().map(|fd| fd.typ.clone()))
     }
     pub fn is_empty(&self) -> bool {
         match self {
             UserType::Struct(st) => st.fields.is_empty(),
-            UserType::Enum(en) => en.variants.is_empty(),
+            UserType::Enum(en) => en.definitions.is_empty(),
         }
     }
 }
@@ -217,7 +260,7 @@ pub mod test {
         }};
     }
 
-    macro_rules! list {
+    macro_rules! svec {
         ($($arg:expr),* $(,)?) => {
             vec![
                 $(Spanned::new_unspanned($arg.into())),*
@@ -237,9 +280,9 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: list![Struct {
+                user_types: svec![Struct {
                     name: s("Person"),
-                    fields: list![
+                    fields: svec![
                         StructField::new("age", AtomicType::U8),
                         StructField::new("name", AtomicType::String),
                         StructField::new("mood", AtomicType::F32),
@@ -263,9 +306,9 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: list![Struct {
+                user_types: svec![Struct {
                     name: s("Person"),
-                    fields: list![
+                    fields: svec![
                         StructField::new("age", AtomicType::U8),
                         StructField::new("name", AtomicType::String),
                         StructField::new("mood", AtomicType::F32),
@@ -294,10 +337,10 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: list![
+                user_types: svec![
                     Struct {
                         name: s("A1"),
-                        fields: list![
+                        fields: svec![
                             StructField::new("darega", AtomicType::U32),
                             StructField::new("omaga", AtomicType::I32),
                             StructField::new("odiga", AtomicType::F32),
@@ -305,7 +348,7 @@ pub mod test {
                     },
                     Struct {
                         name: s("A2"),
-                        fields: list![
+                        fields: svec![
                             StructField::new("lerolero", AtomicType::U8),
                             StructField::new("lepolepo", AtomicType::Int),
                             StructField::new("tibirabirom", AtomicType::USize),
@@ -339,12 +382,65 @@ pub mod test {
                 }
             ",
             Document {
-                user_types: list![Enum {
+                user_types: svec![Enum {
                     name: s("Color"),
-                    variants: list![
+                    definitions: svec![
                         StructField::new("RGB", "RGB"),
                         StructField::new("HSLV", "HSLV"),
                         StructField::new("Gray", "Gray"),
+                    ]
+                }]
+            }
+        )
+    }
+
+    impl EnumVariant {
+        fn user_type(val: impl Into<UserType>) -> Self {
+            Self::UserType(val.into())
+        }
+    }
+
+    #[test]
+    fn test_enum_composite() {
+        assert_parse!(
+            "
+                enum Message {
+                    struct Ping {
+                        val: string,
+                        code: u32
+                    }
+                    enum Download {
+                        struct Covers;
+                        struct Images {
+                            by: String
+                        }
+                    }
+                }
+            ",
+            Document {
+                user_types: svec![Enum {
+                    name: s("Message"),
+                    definitions: svec![
+                        EnumVariant::user_type(Struct {
+                            name: s("Ping"),
+                            fields: svec![
+                                StructField::new("val", AtomicType::String),
+                                StructField::new("code", AtomicType::U32),
+                            ]
+                        }),
+                        EnumVariant::user_type(Enum {
+                            name: s("Download"),
+                            definitions: svec![
+                                EnumVariant::user_type(Struct {
+                                    name: s("Covers"),
+                                    fields: vec![]
+                                }),
+                                EnumVariant::user_type(Struct {
+                                    name: s("Images"),
+                                    fields: svec![StructField::new("by", AtomicType::String)]
+                                })
+                            ]
+                        })
                     ]
                 }]
             }

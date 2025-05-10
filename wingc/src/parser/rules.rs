@@ -52,6 +52,7 @@ fn parse(pairs: Pairs<Rule>) -> Type {
     } else {
         let tname = pairs.next2().as_str();
         tname
+            .to_lowercase()
             .parse::<AtomicType>()
             .map(Type::Builtin)
             .unwrap_or_else(|_| Type::User(tname.to_owned()))
@@ -89,9 +90,19 @@ fn parse(pairs: Pairs<Rule>) -> Document {
 }
 
 #[apply(impl_parse_composite)]
-#[ignore(spantree)]
+#[rule(enum_variant)]
+fn parse(pairs: Pairs<Rule>) -> EnumVariant {
+    let inner = pairs.next2();
+    if inner.as_rule() == Rule::struct_field {
+        EnumVariant::NamedVariant(ParseItem::parse(inner)?)
+    } else {
+        EnumVariant::UserType(ParseItem::parse(inner)?)
+    }
+}
+
+#[apply(impl_parse_composite)]
 #[rule(enum_body)]
-fn parse(pairs: Pairs<Rule>) -> SVec<Type> {
+fn parse(pairs: Pairs<Rule>) -> SVec<EnumVariant> {
     pairs.collect_items()?
 }
 
@@ -100,7 +111,7 @@ fn parse(pairs: Pairs<Rule>) -> SVec<Type> {
 fn parse(pairs: Pairs<Rule>) -> Enum {
     Enum {
         name: pairs.next_item()?,
-        variants: pairs.next_item()?,
+        definitions: pairs.next_item()?,
     }
 }
 

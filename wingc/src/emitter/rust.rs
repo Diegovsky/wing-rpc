@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Write};
 
-use crate::parser::{AtomicType, Type, UserType};
+use crate::parser::{AtomicType, EnumVariant, Type, UserType};
 
 use super::Emitter;
 
@@ -26,14 +26,14 @@ impl RustEmitter {
         write!(f, "\n\n")
     }
     fn is_ut_partialeq(&self, ut: &UserType) -> bool {
-        ut.children().all(|tp| self.is_partialeq(tp.value))
+        ut.children_types().all(|tp| self.is_partialeq(&tp.value))
     }
     fn is_partialeq(&self, typ: &Type) -> bool {
         match typ {
             Type::Builtin(AtomicType::F32 | AtomicType::F64) => false,
             Type::Builtin(_) => true,
             Type::List(tp) => self.is_partialeq(tp),
-            Type::User(ut) => self.is_ut_partialeq(&self.user_types[ut]),
+            Type::User(ut) => self.is_ut_partialeq(&self.user_types[dbg!(ut)]),
         }
     }
     fn get_type_name(&self, typ: &Type) -> String {
@@ -64,7 +64,11 @@ impl RustEmitter {
             .to_string(),
         }
     }
-    fn emit_usertype(&mut self, f: &mut dyn Write, ut: &UserType) -> R {
+    fn emit_user_type(&mut self, f: &mut dyn Write, ut: &UserType) -> R {
+        // Emit inner children types
+        for child in ut.children_user_types() {
+            self.emit_user_type(f, child)?;
+        }
         let mut derives = vec!["Debug", "Clone"];
         if self.is_ut_partialeq(ut) {
             derives.push("PartialEq");
@@ -94,11 +98,16 @@ impl RustEmitter {
             UserType::Enum(en) => {
                 write!(f, "enum {} {{\n", name)?;
                 self.indent += 1;
-                for field in en.variants.iter() {
-                    self.indent(f)?;
-                    let name = &*field.name;
-                    let tp = self.get_type_name(&field.typ);
-                    write!(f, "{}({}),\n", name, tp)?;
+                for field in en.definitions.iter() {
+                    match &field.value {
+                        EnumVariant::NamedVariant(field) => {
+                            self.indent(f)?;
+                            let name = &*field.name;
+                            let tp = self.get_type_name(&field.typ);
+                            write!(f, "{}({}),\n", name, tp)?;
+                        }
+                        _ => (),
+                    }
                 }
                 self.indent -= 1;
                 f.write_all(b"}\n\n")?;
@@ -114,6 +123,13 @@ impl RustEmitter {
 
         Ok(())
     }
+
+    fn register_ut(&mut self, ut: &UserType) {
+        self.user_types.insert(ut.name().into(), ut.clone());
+        for child in ut.children_user_types() {
+            self.register_ut(child);
+        }
+    }
 }
 
 type R = std::io::Result<()>;
@@ -122,14 +138,15 @@ impl Emitter for RustEmitter {
     fn emit(&mut self, document: &crate::parser::Document, writer: &mut dyn std::io::Write) -> R {
         self.emit_header(writer)?;
         self.user_types.clear();
-        self.user_types.extend(
-            document
-                .user_types
-                .iter()
-                .map(|ut| (ut.name().to_string(), ut.value.clone())),
-        );
+
+        for ut in &document.user_types {
+            self.register_ut(&ut.value);
+        }
+        for (k, v) in &self.user_types {
+            println!("{k}: {}", v.name());
+        }
         for ut in document.user_types.iter() {
-            self.emit_usertype(writer, ut)?;
+            self.emit_user_type(writer, ut)?;
         }
         Ok(())
     }

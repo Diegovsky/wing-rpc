@@ -103,14 +103,18 @@ fn analyze_missing_types(document: &Document) -> Errors {
         .user_types
         .iter()
         .flat_map(|ut| {
-            ut.children()
-                .filter_map(|tp| tp.map(Type::as_user).transpose())
-                .filter(|name| !known_types.contains(name.value))
+            ut.children_types()
+                .filter_map(|tp| tp.map(|h| h.as_user().map(|h| h.to_owned())).transpose())
+                .filter(|name| !known_types.contains(name.value.as_str()))
         })
         .map(|missing| Error::UndefinedType {
-            suggestion: fuzzy_match(known_types.iter().copied(), &mut matcher, missing.value)
-                .map(ToString::to_string),
-            name: missing.map(ToString::to_string),
+            suggestion: fuzzy_match(
+                known_types.iter().copied(),
+                &mut matcher,
+                missing.value.as_str(),
+            )
+            .map(ToString::to_string),
+            name: missing,
         })
         .collect()
 }
