@@ -10,7 +10,7 @@
 //! <summary> Example code </summary>
 //!
 //! ```no_run
-#![doc=include_str!("../examples/hello.rs")]
+// #![doc=include_str!("../examples/hello.rs")]
 //! ```
 //!
 //! </details>
@@ -24,13 +24,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytemuck::Pod;
 use derive_more::From;
-use easy_ext::ext;
-use pack1::U16LE;
 
 use serde::{Deserialize, Serialize};
-use simple_coro::{self, Coro, CoroState, Handle};
 use thiserror::Error;
 
 #[cfg(feature = "client")]
@@ -38,50 +34,21 @@ pub mod client;
 #[cfg(feature = "server")]
 pub mod server;
 
+mod sansio;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct WireHeader {
+struct WirePacket<'a> {
     flags: u8,
     len: u16,
+    data: &'a [u8],
 }
 
-#[ext]
-impl Handle<usize, Vec<u8>> {
-    async fn bytes_for<N: Pod>(&mut self) -> N {
-        let n = size_of::<N>();
-        let buf = self.yield_value(n).await;
-        *bytemuck::from_bytes(buf.as_ref())
-    }
-}
-
-impl WireHeader {
-    async fn read_sansio(mut handle: Handle<usize, Vec<u8>>) -> Self {
-        let flags: u8 = handle.bytes_for().await;
-        let len: U16LE = handle.bytes_for().await;
+impl<'a> WirePacket<'a> {
+    fn new(flags: u8, data: &'a [u8]) -> Self {
         Self {
             flags,
-            len: len.get(),
-        }
-    }
-    pub fn write(&self) -> Vec<u8> {
-        let mut buf = vec![];
-        buf.push(self.flags);
-        buf.extend_from_slice(&self.len.to_le_bytes());
-        buf
-    }
-    /// Reads byte-by-byte, so it's better to wrap it in a [`BufReader`]
-    pub fn read(read: &mut dyn io::Read) -> io::Result<Self> {
-        let mut coro = Coro::from(Self::read_sansio);
-        let mut buf = vec![0; 16];
-        loop {
-            coro = match coro.resume() {
-                CoroState::Pending(c, n) => {
-                    buf.clear();
-                    buf.resize(n, 0);
-                    read.read_exact(&mut buf)?;
-                    c.send(buf.clone())
-                }
-                CoroState::Complete(this) => return Ok(this),
-            }
+            len: data.len() as u16,
+            data,
         }
     }
 }
@@ -95,16 +62,10 @@ pub enum Error {
     Serde(serde_json::Error),
 }
 
-impl Error {
-    pub fn is_would_block(&self) -> bool {
-        return matches!(self, Self::Io(e) if e.kind() == ErrorKind::WouldBlock);
-    }
-}
-
 /// An active connection to a `Wing RPC` peer.
 pub struct Peer {
-    read: Box<dyn Read + Send>,
-    write: Box<dyn Write + Send>,
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
     buf: Vec<u8>,
 }
 
@@ -154,7 +115,31 @@ impl From<Duration> for Timeout {
 }
 
 impl Timeout {
-    fn retry_for<T>(&self, mut retry: impl FnMut() -> io::Result<T>) -> io::Result<Option<T>> {
+    // fn retry_for2<'a, T: 'a>(
+    //     &self,
+    //     mut retry: impl FnMut() -> io::Result<T>,
+    // ) -> io::Result<Option<T>> {
+    //     loop {
+    //         match polonius::<_, _, ForLt!(T)>(&mut retry, |retry| match retry() {
+    //             Ok(val) => PoloniusResult::Borrowing(val),
+    //             Err(e) => PoloniusResult::Owned {
+    //                 value: e,
+    //                 input_borrow: Placeholder,
+    //             },
+    //         }) {
+    //             PoloniusResult::Borrowing(o) => return Ok(Some(o)),
+    //             PoloniusResult::Owned {
+    //                 value: err,
+    //                 input_borrow: retry2,
+    //             } => retry = retry2,
+    //         }
+    //     }
+    // }
+    fn retry_for<'a, T: 'a, A>(
+        &self,
+        retry: fn(&'a mut A) -> io::Result<T>,
+        args: &'a mut A,
+    ) -> io::Result<Option<T>> {
         let timeout = match self {
             Timeout::Block => Duration::MAX,
             Timeout::DontBlock => Duration::ZERO,
@@ -162,8 +147,11 @@ impl Timeout {
         };
         let now = Instant::now();
         let time = Duration::from_millis(1);
+        let args = args as *mut A;
         loop {
-            match retry() {
+            // SAFETY: This is safe because we guarantee the data is borrowed only on the Ok variant,
+            // and then not ran again.
+            match retry(unsafe { &mut *args }) {
                 Ok(o) => return Ok(Some(o)),
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {
                     if now.elapsed() < timeout {
@@ -198,8 +186,8 @@ impl Peer {
     /// which is why a simpler api for sockets is provided: [`Peer::from_socket`].
     pub fn new(read: impl Read + Send + 'static, write: impl Write + Send + 'static) -> Self {
         Self {
-            read: Box::new(read),
-            write: Box::new(write),
+            reader: Box::new(read),
+            writer: Box::new(write),
             buf: Vec::new(),
         }
     }
@@ -213,27 +201,38 @@ impl Peer {
     }
     pub fn send<'a>(&mut self, message: impl Message<'a>) -> Result<(), Error> {
         let data = serde_json::to_vec(&WrappedData::wrap(message))?;
-        let header = WireHeader {
-            flags: 0,
-            len: data.len() as _,
-        };
-        self.write.write_all(header.write().as_slice())?;
-        self.write.write_all(data.as_slice())?;
-        self.write.flush()?;
+        let header = WirePacket::new(0, data.as_slice());
+        header.write(&mut self.buf, &mut self.writer)?;
+        self.writer.flush()?;
         Ok(())
     }
+    /// Waits for a message of `T` to arrive.
+    ///
+    /// This operation blocks the current thread while waiting for a message.
+    /// Check out [`Self::try_recv`] for more control over this.
     pub fn recv<'a, T: Message<'a>>(&'a mut self) -> Result<T, Error> {
         self.try_recv(Timeout::Block)
             .map(|h| h.expect("Blocked operation returned None"))
     }
+    /// Waits for a message of `T` to arrive with a Timeout.
+    ///
+    /// - [`Timeout::Block`]:
+    ///     Blocks the current thread and always returns `Some`. This is the same as [`Self::recv`].
+    /// - [`Timeout::DontBlock`]:
+    ///     Returns a message if one is available, otherwise, returns `None`.
+    /// - [`Timeout::WaitFor`]:
+    ///     Same as [`Timeout::DontBlock`], except that it keeps retrying
+    ///     for the [`Duration`] specified and returns `None` if a message didn't arrive in that time.
+    ///
     pub fn try_recv<'a, T: Message<'a>>(
         &'a mut self,
         timeout: Timeout,
     ) -> Result<Option<T>, Error> {
-        let header = try_harder!(timeout.retry_for(|| WireHeader::read(&mut self.read)));
-        self.buf.resize(header.len as _, 0);
-        try_harder!(timeout.retry_for(|| self.read.read_exact(&mut self.buf)));
-        let msg = serde_json::from_slice::<WrappedData<T>>(self.buf.as_slice())?;
+        let wire = try_harder!(timeout.retry_for(
+            |this| WirePacket::read(&mut this.buf, &mut this.reader),
+            self
+        ));
+        let msg = serde_json::from_slice::<WrappedData<T>>(wire.data)?;
         Ok(Some(msg.data))
     }
 }
