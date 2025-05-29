@@ -1,15 +1,15 @@
 use derive_more::From;
-use miette::bail;
 use pest::{
     Parser, RuleType,
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
+use serde::Deserialize;
 use strum::{EnumString, IntoStaticStr};
 
 #[derive(Parser, Debug, Clone, PartialEq)]
 #[grammar = "./idl.pest"]
-struct WingParser;
+pub(crate) struct WingParser;
 
 mod rules;
 pub mod span;
@@ -17,7 +17,7 @@ use rules::ParseItem;
 pub use span::{S, SVec};
 
 #[easy_ext::ext]
-impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
+pub(crate) impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
     fn parse2(rule: R, input: &str) -> miette::Result<Pairs<'_, R>> {
         Self::parse(rule, input)
             .map_err(pest::error::Error::into_miette)
@@ -26,13 +26,14 @@ impl<R: RuleType + Send + Sync + 'static, P: Parser<R>> P {
 }
 
 #[easy_ext::ext]
-impl<'i> Pairs<'i, Rule> {
+pub(crate) impl<'i> Pairs<'i, Rule> {
     fn next_item<P: ParseItem>(&mut self) -> miette::Result<P> {
         P::parse(self.next2())
     }
     fn collect_items<P: ParseItem>(&mut self) -> miette::Result<Vec<P>> {
         self.map(|pair| P::parse(pair)).collect()
     }
+    #[track_caller]
     fn next2(&mut self) -> Pair<'i, Rule> {
         self.next().unwrap()
     }
@@ -48,8 +49,9 @@ pub fn parse_document(text: &str) -> miette::Result<Document> {
     Ok(doc.value)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, Deserialize, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
+#[serde(rename = "lowercase")]
 pub enum AtomicType {
     // Specific Int Sizes
     U8,
@@ -73,7 +75,7 @@ pub enum AtomicType {
     Binary,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize)]
 pub enum Type {
     Builtin(AtomicType),
     List(Box<Type>),
@@ -100,13 +102,13 @@ impl std::fmt::Display for Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, From)]
+#[derive(Debug, Clone, PartialEq, From, Deserialize)]
 pub enum EnumVariant {
     NamedVariant(StructField),
     UserType(UserType),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Enum {
     pub name: String,
     pub definitions: SVec<EnumVariant>,
@@ -147,25 +149,25 @@ impl Enum {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct StructField {
     pub name: String,
     pub typ: Type,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Struct {
     pub name: String,
     pub fields: SVec<StructField>,
 }
 
-#[derive(Debug, Clone, From, PartialEq)]
+#[derive(Debug, Clone, From, PartialEq, Deserialize)]
 pub enum UserType {
     Struct(S<Struct>),
     Enum(S<Enum>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Document {
     pub user_types: SVec<UserType>,
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io::Write};
 
-use crate::parser::{AtomicType, S, StructField, Type, UserType};
+use crate::parser::{AtomicType, StructField, Type, UserType};
 
 use super::Emitter;
 

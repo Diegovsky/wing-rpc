@@ -5,7 +5,8 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 SEP = _{";" | "," }
 
 ident = {(LETTER | NUMBER | "_")+}
-type = {ident | ("["~ type ~ "]")}
+list_type = {"["~ type ~ "]"}
+type = {ident | list_type}
 
 struct_field = { ident ~ ":" ~ type}
 struct_body = {

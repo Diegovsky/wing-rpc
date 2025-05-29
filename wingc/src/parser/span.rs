@@ -2,10 +2,11 @@ use std::ops::Range;
 
 use derive_more::{AsRef, Deref, DerefMut};
 use miette::{SourceOffset, SourceSpan};
+use serde::Deserialize;
 
 use super::{Rule, rules::ParseItem};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
 pub struct Span {
     pub offset: usize,
     pub length: usize,
@@ -39,7 +40,7 @@ impl From<pest::Span<'_>> for Span {
     }
 }
 
-#[derive(Deref, DerefMut, AsRef, Debug, Clone, Eq)]
+#[derive(Deref, DerefMut, AsRef, Debug, Clone, Eq, Deserialize)]
 pub struct Spanned<T> {
     pub span: Span,
     #[deref_mut]
