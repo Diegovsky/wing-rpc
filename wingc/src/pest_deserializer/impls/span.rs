@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde::de::{IntoDeserializer, value::MapDeserializer};
 use simplede::SimpleDe;
 

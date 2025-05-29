@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    emitter::{self, Emitter, PyEmitter, RustEmitter},
+    emitter::{Emitter, PyEmitter, RustEmitter},
     parser,
 };
 

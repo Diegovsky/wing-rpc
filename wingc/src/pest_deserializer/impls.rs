@@ -7,7 +7,7 @@ pub use span::*;
 impl<'a, 'de> Deserializer<'de> for &'a mut PestDeserializer<'de> {
     type Error = Void;
 
-    fn deserialize_any<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
@@ -15,14 +15,14 @@ impl<'a, 'de> Deserializer<'de> for &'a mut PestDeserializer<'de> {
         self.deserialize_request(Request::Atom, visitor)
     }
 
-    fn deserialize_str<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
         self.d_string(visitor)
     }
 
-    fn deserialize_string<V>(mut self, visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {

@@ -216,7 +216,6 @@ impl UserType {
 
 #[cfg(test)]
 pub mod test {
-    use crate::pest_deserializer::PestDeserializer;
 
     use super::span::Spanned;
     use super::*;

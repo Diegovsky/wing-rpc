@@ -1,12 +1,11 @@
-use wingc::utils::{test, Mode};
+use wingc::utils::{Mode, test};
 
 #[test]
-fn simple(){
+fn simple() {
     test("test-files/", "simple", Mode::Test);
 }
 
-
 #[test]
-fn composite(){
+fn composite() {
     test("test-files/", "composite", Mode::Test);
 }
