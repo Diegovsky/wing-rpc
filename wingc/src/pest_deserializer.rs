@@ -40,7 +40,7 @@ impl From<Composite> for Request {
 }
 
 #[derive(Clone)]
-struct PestDeserializer<'i> {
+pub struct PestDeserializer<'i> {
     adjust_case: bool,
     pairs: Pairs<'i, Rule>,
 }
@@ -76,7 +76,7 @@ impl<'de> PestDeserializer<'de> {
         variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Void> {
-        self.assert_rule_matches(name);
+        self.assert_rule_matches(name)?;
         self.deserialize_request(Request::Enum { variants }, visitor)
     }
 
@@ -91,11 +91,12 @@ impl<'de> PestDeserializer<'de> {
         fn normalize(text: &str) -> String {
             text.replace("_", "").to_lowercase()
         }
-        if self.adjust_case {
-            assert_eq!(normalize(&*self.peek_rule_name()), normalize(name));
+        let (lhs, rhs) = if self.adjust_case {
+            (normalize(&*self.peek_rule_name()), normalize(name))
         } else {
-            assert_eq!(self.peek_rule_name(), name);
-        }
+            (self.peek_rule_name(), name.to_string())
+        };
+        assert_eq!(lhs, rhs, "Expected rule {lhs}, got {rhs}");
         Ok(())
     }
 
@@ -105,7 +106,7 @@ impl<'de> PestDeserializer<'de> {
         fields: StrArray,
         visitor: V,
     ) -> Result<V::Value, Void> {
-        if dbg!(name) == "Spanned" {
+        if name == "Spanned" {
             return DeAdapter(impls::SpannedDe::new(self.clone()))
                 .deserialize_struct(name, fields, visitor);
         }

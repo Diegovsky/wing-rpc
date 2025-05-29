@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io::Write};
 
-use crate::parser::{AtomicType, StructField, Type, UserType};
+use crate::parser::{Builtin, StructField, Type, UserType};
 
 use super::Emitter;
 
@@ -38,22 +38,22 @@ impl PyEmitter {
                 format!("list[{}]", self.get_type_name(inner))
             }
             Type::Builtin(tp) => match tp {
-                AtomicType::U8
-                | AtomicType::U16
-                | AtomicType::U32
-                | AtomicType::U64
-                | AtomicType::USize
-                | AtomicType::UInt
-                | AtomicType::I8
-                | AtomicType::I16
-                | AtomicType::I32
-                | AtomicType::I64
-                | AtomicType::ISize
-                | AtomicType::Int => "int",
-                AtomicType::F32 | AtomicType::F64 => "float",
-                AtomicType::Bool => "bool",
-                AtomicType::String => "str",
-                AtomicType::Binary => "bytes",
+                Builtin::U8
+                | Builtin::U16
+                | Builtin::U32
+                | Builtin::U64
+                | Builtin::USize
+                | Builtin::UInt
+                | Builtin::I8
+                | Builtin::I16
+                | Builtin::I32
+                | Builtin::I64
+                | Builtin::ISize
+                | Builtin::Int => "int",
+                Builtin::F32 | Builtin::F64 => "float",
+                Builtin::Bool => "bool",
+                Builtin::String => "str",
+                Builtin::Binary => "bytes",
             }
             .to_string(),
         }

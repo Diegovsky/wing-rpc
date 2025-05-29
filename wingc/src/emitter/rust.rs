@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Write};
 
-use crate::parser::{AtomicType, EnumVariant, Type, UserType};
+use crate::parser::{Builtin, EnumVariant, Type, UserType};
 
 use super::Emitter;
 
@@ -30,7 +30,7 @@ impl RustEmitter {
     }
     fn is_partialeq(&self, typ: &Type) -> bool {
         match typ {
-            Type::Builtin(AtomicType::F32 | AtomicType::F64) => false,
+            Type::Builtin(Builtin::F32 | Builtin::F64) => false,
             Type::Builtin(_) => true,
             Type::List(tp) => self.is_partialeq(tp),
             Type::User(ut) => self.is_ut_partialeq(&self.user_types[dbg!(ut)]),
@@ -43,23 +43,23 @@ impl RustEmitter {
                 format!("Vec<{}>", self.get_type_name(inner))
             }
             Type::Builtin(tp) => match tp {
-                AtomicType::USize
-                | AtomicType::ISize
-                | AtomicType::U8
-                | AtomicType::U16
-                | AtomicType::U32
-                | AtomicType::U64
-                | AtomicType::I8
-                | AtomicType::I16
-                | AtomicType::I32
-                | AtomicType::I64
-                | AtomicType::F32
-                | AtomicType::Bool
-                | AtomicType::F64 => <&str>::from(tp),
-                AtomicType::UInt => "u32",
-                AtomicType::Int => "i32",
-                AtomicType::String => "String",
-                AtomicType::Binary => "Vec<u8>",
+                Builtin::USize
+                | Builtin::ISize
+                | Builtin::U8
+                | Builtin::U16
+                | Builtin::U32
+                | Builtin::U64
+                | Builtin::I8
+                | Builtin::I16
+                | Builtin::I32
+                | Builtin::I64
+                | Builtin::F32
+                | Builtin::Bool
+                | Builtin::F64 => <&str>::from(tp),
+                Builtin::UInt => "u32",
+                Builtin::Int => "i32",
+                Builtin::String => "String",
+                Builtin::Binary => "Vec<u8>",
             }
             .to_string(),
         }

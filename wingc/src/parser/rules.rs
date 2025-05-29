@@ -43,17 +43,16 @@ impl ParseItem for String {
 #[apply(impl_parse_composite)]
 #[rule(r#type)]
 fn parse(pairs: Pairs<Rule>) -> Type {
-    if pairs
-        .peek()
-        .map(|pair| pair.as_rule() == Self::RULE)
-        .unwrap_or(false)
-    {
+    let tk = dbg!(pairs.peek().unwrap());
+    if tk.as_rule() == Rule::r#type {
+        pairs.next_item::<Self>()?
+    } else if tk.as_rule() == Rule::list_type {
         Self::List(Box::new(pairs.next_item()?))
     } else {
         let tname = pairs.next2().as_str();
         tname
             .to_lowercase()
-            .parse::<AtomicType>()
+            .parse::<Builtin>()
             .map(Type::Builtin)
             .unwrap_or_else(|_| Type::User(tname.to_owned()))
     }

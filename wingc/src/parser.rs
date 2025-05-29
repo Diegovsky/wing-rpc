@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use derive_more::From;
 use pest::{
     Parser, RuleType,
@@ -49,10 +51,9 @@ pub fn parse_document(text: &str) -> miette::Result<Document> {
     Ok(doc.value)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, Deserialize, IntoStaticStr)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
-#[serde(rename = "lowercase")]
-pub enum AtomicType {
+pub enum Builtin {
     // Specific Int Sizes
     U8,
     U16,
@@ -75,21 +76,31 @@ pub enum AtomicType {
     Binary,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize)]
-pub enum Type {
-    Builtin(AtomicType),
-    List(Box<Type>),
-    User(String),
+#[derive(Deserialize)]
+enum TypeDe {
+    Ident(String),
+    #[serde(rename = "list_type")]
+    List(Box<TypeDe>),
 }
 
-impl Type {
-    pub fn get_variant_name(&self) -> String {
-        match self {
-            Type::User(name) => name.to_string(),
-            Type::List(inner) => format!("ListOf{}", inner.get_variant_name()),
-            Type::Builtin(tp) => format!("{:?}", tp),
+impl From<TypeDe> for Type {
+    fn from(value: TypeDe) -> Self {
+        match value {
+            TypeDe::List(lst) => Self::List(Box::new((*lst).into())),
+            TypeDe::Ident(ident) => match Builtin::from_str(&*ident).ok() {
+                Some(builtin) => Self::Builtin(builtin),
+                None => Self::User(ident),
+            },
         }
     }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize)]
+#[serde(from = "TypeDe")]
+pub enum Type {
+    Builtin(Builtin),
+    List(Box<Type>),
+    User(String),
 }
 
 impl std::fmt::Display for Type {
@@ -205,11 +216,13 @@ impl UserType {
 
 #[cfg(test)]
 pub mod test {
+    use crate::pest_deserializer::PestDeserializer;
+
     use super::span::Spanned;
     use super::*;
 
-    impl From<AtomicType> for Type {
-        fn from(val: AtomicType) -> Self {
+    impl From<Builtin> for Type {
+        fn from(val: Builtin) -> Self {
             Type::Builtin(val)
         }
     }
@@ -258,7 +271,10 @@ pub mod test {
         ($left:expr, $right:expr, $ty:ty) => {{
             let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
             let val = pairs.next_item::<$ty>().unwrap();
-            assert_eq!(val, $right)
+            assert_eq!(val, $right);
+            // let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
+            // let obj = de.deserialize::<$ty>().unwrap();
+            // assert_eq!(obj, val);
         }};
     }
 
@@ -285,9 +301,9 @@ pub mod test {
                 user_types: svec![Struct {
                     name: s("Person"),
                     fields: svec![
-                        StructField::new("age", AtomicType::U8),
-                        StructField::new("name", AtomicType::String),
-                        StructField::new("mood", AtomicType::F32),
+                        StructField::new("age", Builtin::U8),
+                        StructField::new("name", Builtin::String),
+                        StructField::new("mood", Builtin::F32),
                         StructField::new("hair", "Hair"),
                     ]
                 }]
@@ -311,9 +327,9 @@ pub mod test {
                 user_types: svec![Struct {
                     name: s("Person"),
                     fields: svec![
-                        StructField::new("age", AtomicType::U8),
-                        StructField::new("name", AtomicType::String),
-                        StructField::new("mood", AtomicType::F32),
+                        StructField::new("age", Builtin::U8),
+                        StructField::new("name", Builtin::String),
+                        StructField::new("mood", Builtin::F32),
                         StructField::new("hair", "Hair"),
                     ]
                 }]
@@ -343,17 +359,17 @@ pub mod test {
                     Struct {
                         name: s("A1"),
                         fields: svec![
-                            StructField::new("darega", AtomicType::U32),
-                            StructField::new("omaga", AtomicType::I32),
-                            StructField::new("odiga", AtomicType::F32),
+                            StructField::new("darega", Builtin::U32),
+                            StructField::new("omaga", Builtin::I32),
+                            StructField::new("odiga", Builtin::F32),
                         ]
                     },
                     Struct {
                         name: s("A2"),
                         fields: svec![
-                            StructField::new("lerolero", AtomicType::U8),
-                            StructField::new("lepolepo", AtomicType::Int),
-                            StructField::new("tibirabirom", AtomicType::USize),
+                            StructField::new("lerolero", Builtin::U8),
+                            StructField::new("lepolepo", Builtin::Int),
+                            StructField::new("tibirabirom", Builtin::USize),
                         ]
                     }
                 ]
@@ -363,14 +379,14 @@ pub mod test {
 
     #[test]
     fn parse_list() {
-        assert_parse!("[int]", Type::list(AtomicType::Int), Type);
-        assert_parse!("[u8]", Type::list(AtomicType::U8), Type);
-        assert_parse!("[string]", Type::list(AtomicType::String), Type);
+        assert_parse!("[int]", Type::list(Builtin::Int), Type);
+        assert_parse!("[u8]", Type::list(Builtin::U8), Type);
+        assert_parse!("[string]", Type::list(Builtin::String), Type);
     }
 
     #[test]
     fn parse_list_nested() {
-        assert_parse!("[[int]]", Type::list(Type::list(AtomicType::Int)), Type);
+        assert_parse!("[[int]]", Type::list(Type::list(Builtin::Int)), Type);
     }
 
     #[test]
@@ -426,8 +442,8 @@ pub mod test {
                         EnumVariant::user_type(Struct {
                             name: s("Ping"),
                             fields: svec![
-                                StructField::new("val", AtomicType::String),
-                                StructField::new("code", AtomicType::U32),
+                                StructField::new("val", Builtin::String),
+                                StructField::new("code", Builtin::U32),
                             ]
                         }),
                         EnumVariant::user_type(Enum {
@@ -439,7 +455,7 @@ pub mod test {
                                 }),
                                 EnumVariant::user_type(Struct {
                                     name: s("Images"),
-                                    fields: svec![StructField::new("by", AtomicType::String)]
+                                    fields: svec![StructField::new("by", Builtin::String)]
                                 })
                             ]
                         })
