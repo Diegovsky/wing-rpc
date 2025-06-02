@@ -77,16 +77,16 @@ pub enum Builtin {
 }
 
 #[derive(Deserialize)]
+#[serde(rename = "Type")]
 enum TypeDe {
     Ident(String),
-    #[serde(rename = "list_type")]
-    List(Box<TypeDe>),
+    ListType(Box<TypeDe>),
 }
 
 impl From<TypeDe> for Type {
     fn from(value: TypeDe) -> Self {
         match value {
-            TypeDe::List(lst) => Self::List(Box::new((*lst).into())),
+            TypeDe::ListType(lst) => Self::List(Box::new((*lst).into())),
             TypeDe::Ident(ident) => match Builtin::from_str(&*ident).ok() {
                 Some(builtin) => Self::Builtin(builtin),
                 None => Self::User(ident),
@@ -214,8 +214,82 @@ impl UserType {
     }
 }
 
+// #[cfg(test)]
+// pub mod test {
+
+//     use super::span::Spanned;
+//     use super::*;
+
+//     impl From<Builtin> for Type {
+//         fn from(val: Builtin) -> Self {
+//             Type::Builtin(val)
+//         }
+//     }
+
+//     impl From<Struct> for UserType {
+//         fn from(value: Struct) -> Self {
+//             UserType::Struct(S::new_unspanned(value))
+//         }
+//     }
+
+//     impl From<Enum> for UserType {
+//         fn from(value: Enum) -> Self {
+//             UserType::Enum(S::new_unspanned(value))
+//         }
+//     }
+
+//     impl From<&str> for Type {
+//         fn from(val: &str) -> Self {
+//             Type::User(s(val))
+//         }
+//     }
+//     impl StructField {
+//         pub fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
+//             Self {
+//                 name: name.into(),
+//                 typ: type_.into(),
+//             }
+//         }
+//     }
+
+//     impl Type {
+//         fn list(inner: impl Into<Type>) -> Self {
+//             Self::List(Box::new(inner.into()))
+//         }
+//     }
+
+//     fn s(text: &'_ str) -> String {
+//         text.to_owned()
+//     }
+
+//     macro_rules! assert_parse {
+//         ($left:expr, $right:expr) => {
+//             assert_parse!($left, $right, Document)
+//         };
+
+//         ($left:expr, $right:expr, $ty:ty) => {{
+//             let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
+//             let val = pairs.next_item::<$ty>().unwrap();
+//             assert_eq!(val, $right);
+//             // let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
+//             // let obj = de.deserialize::<$ty>().unwrap();
+//             // assert_eq!(obj, val);
+//         }};
+//     }
+
+//     macro_rules! svec {
+//         ($($arg:expr),* $(,)?) => {
+//             vec![
+//                 $(Spanned::new_unspanned($arg.into())),*
+//             ]
+//         };
+//     }
+// }
+//
+
 #[cfg(test)]
-pub mod test {
+mod test {
+    use super::*;
 
     use super::span::Spanned;
     use super::*;
@@ -268,21 +342,67 @@ pub mod test {
         };
 
         ($left:expr, $right:expr, $ty:ty) => {{
-            let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
-            let val = pairs.next_item::<$ty>().unwrap();
-            assert_eq!(val, $right);
-            // let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
-            // let obj = de.deserialize::<$ty>().unwrap();
-            // assert_eq!(obj, val);
+            let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
+            let obj = de.deserialize::<$ty>().unwrap();
+            assert_eq!(obj, $right);
         }};
     }
-
     macro_rules! svec {
         ($($arg:expr),* $(,)?) => {
             vec![
                 $(Spanned::new_unspanned($arg.into())),*
             ]
         };
+    }
+
+    use crate::pest_deserializer::PestDeserializer;
+
+    #[test]
+    fn parse_type() {
+        assert_parse!("string", Type::Builtin(Builtin::String), Type);
+    }
+
+    #[test]
+    fn parse_struct() {
+        assert_parse!(
+            "struct A {
+                c: string;
+                h: B;
+            }",
+            Struct {
+                name: s("A"),
+                fields: svec![
+                    StructField::new("c", Builtin::String),
+                    StructField::new("h", "B")
+                ]
+            },
+            Struct
+        );
+    }
+    #[test]
+    fn parse_enum() {
+        assert_parse!(
+            "enum A {
+                struct B;
+                struct C {
+                    name: string
+                }
+            }",
+            Enum {
+                name: s("A"),
+                definitions: svec![
+                    UserType::Struct(S::new_unspanned(Struct {
+                        name: s("B"),
+                        fields: svec![]
+                    })),
+                    UserType::Struct(S::new_unspanned(Struct {
+                        name: s("C"),
+                        fields: svec![StructField::new("name", Builtin::String)]
+                    }))
+                ]
+            },
+            Enum
+        );
     }
 
     #[test]

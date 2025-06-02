@@ -14,7 +14,11 @@ use span::Span;
     spanned<T>: (Spanned<ident>)
 */
 
+mod err;
+mod impls;
 mod simplede;
+
+pub use err::Void;
 
 type StrArray = &'static [&'static str];
 
@@ -69,6 +73,28 @@ impl<'de> PestDeserializer<'de> {
     }
 }
 
+fn snake_to_title(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut is_underscore = false;
+    let mut iter = text.chars();
+    let mut buf: Vec<char> = iter.next().unwrap().to_uppercase().collect();
+    for c in iter {
+        if c == '_' {
+            is_underscore = true;
+            continue;
+        }
+        if is_underscore {
+            buf.extend(c.to_uppercase());
+            is_underscore = false;
+            continue;
+        }
+        buf.push(c);
+    }
+    buf.into_iter().collect()
+}
+
 impl<'de> PestDeserializer<'de> {
     fn d_enum<V: Visitor<'de>>(
         &mut self,
@@ -87,16 +113,21 @@ impl<'de> PestDeserializer<'de> {
         self.deserialize_request(Composite::Seq, visitor)
     }
 
-    fn assert_rule_matches(&self, name: &str) -> Result<(), Void> {
-        fn normalize(text: &str) -> String {
-            text.replace("_", "").to_lowercase()
-        }
-        let (lhs, rhs) = if self.adjust_case {
-            (normalize(&*self.peek_rule_name()), normalize(name))
+    fn adjust_case(&self, text: &str) -> String {
+        if self.adjust_case {
+            snake_to_title(text)
         } else {
-            (self.peek_rule_name(), name.to_string())
-        };
-        assert_eq!(lhs, rhs, "Expected rule {lhs}, got {rhs}");
+            text.into()
+        }
+    }
+
+    #[track_caller]
+    fn assert_rule_matches(&self, name: &str) -> Result<(), Void> {
+        let mut rule = self.peek_rule_name();
+        if self.adjust_case {
+            rule = self.adjust_case(rule.as_str())
+        }
+        assert_eq!(rule, name, "Expecting `{name}`, got rule `{rule}` instead");
         Ok(())
     }
 
@@ -107,7 +138,7 @@ impl<'de> PestDeserializer<'de> {
         visitor: V,
     ) -> Result<V::Value, Void> {
         if name == "Spanned" {
-            return DeAdapter(impls::SpannedDe::new(self.clone()))
+            return DeAdapter(impls::SpannedDe::new(&mut *self))
                 .deserialize_struct(name, fields, visitor);
         }
         self.assert_rule_matches(name)?;
@@ -148,8 +179,16 @@ impl<'de> PestDeserializer<'de> {
         request: impl Into<Request>,
         visitor: V,
     ) -> Result<V::Value, Void> {
-        match request.into() {
-            Request::Atom => visitor.visit_str(self.pairs.next2().as_str()),
+        // dbg!(&self.pairs);
+        match dbg!(request.into()) {
+            Request::Atom => {
+                let tk = self.pairs.next2();
+                // assert!(
+                //     tk.clone().into_inner().next().is_none(),
+                //     "Expected atom, got {tk:#?}"
+                // );
+                visitor.visit_str(tk.as_str())
+            }
             Request::Composite(composite) => visitor.visit_seq(CompositeDe {
                 composite,
                 de: self.inner(),
@@ -166,10 +205,6 @@ struct CompositeDe<'de> {
     de: PestDeserializer<'de>,
     composite: Composite,
 }
-
-mod err;
-mod impls;
-pub use err::Void;
 
 #[cfg(test)]
 mod test {
@@ -192,21 +227,21 @@ mod test {
         assert_eq!("Olimar", obj.deserialize::<String>().unwrap())
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_composite(adjust_case: bool) {
+    #[test]
+    fn test_composite() {
         #[derive(Deserialize, PartialEq)]
         #[serde(rename = "struct")]
         struct Struct {
             ident: String,
         }
 
-        let mut obj = PestDeserializer::parse(Rule::r#struct, adjust_case, "struct example {}");
+        let mut obj = PestDeserializer::parse(Rule::r#struct, false, "struct example {}");
         let st = obj.deserialize::<Struct>().unwrap();
         assert_eq!("example", st.ident);
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_composite_recursive(adjust_case: bool) {
+    #[test]
+    fn test_composite_recursive() {
         #[derive(Deserialize, PartialEq)]
         #[serde(rename = "struct_field")]
         struct StructField {
@@ -222,7 +257,7 @@ mod test {
 
         let mut obj = PestDeserializer::parse(
             Rule::r#struct,
-            adjust_case,
+            false,
             "struct Person {
                 name: string,
                 age: u8,
@@ -236,29 +271,40 @@ mod test {
         assert_eq!(st.body[1].ty, "u8");
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_data_enum(adjust_case: bool) {
+    #[test]
+    fn test_data_enum() {
         #[derive(Deserialize, Debug, PartialEq)]
         #[serde(rename = "type")]
+        #[serde(rename_all = "snake_case")]
         enum Type {
-            #[serde(rename = "ident")]
             Ident(String),
-            #[serde(rename = "list_type")]
-            List(Box<Type>),
+            ListType(Box<Type>),
         }
 
-        let mut obj = PestDeserializer::parse(Rule::r#type, adjust_case, "u32");
+        let mut obj = PestDeserializer::parse(Rule::r#type, false, "u32");
         let st = obj.deserialize::<Type>().unwrap();
         assert_eq!(Type::Ident("u32".into()), st);
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_tuple_composite(adjust_case: bool) {
-        let mut obj = PestDeserializer::parse(
-            Rule::r#struct_body,
-            adjust_case,
-            "{ name: string; age: u32 }",
-        );
+    #[test]
+    fn test_data_enum_nested() {
+        #[derive(Deserialize, Debug, PartialEq)]
+        #[serde(rename = "type")]
+        #[serde(rename_all = "snake_case")]
+        enum Type {
+            Ident(String),
+            ListType(Box<Type>),
+        }
+
+        let mut obj = PestDeserializer::parse(Rule::r#type, false, "[u32]");
+        let st = obj.deserialize::<Type>().unwrap();
+        assert_eq!(Type::ListType(Box::new(Type::Ident("u32".into()))), st);
+    }
+
+    #[test]
+    fn test_tuple_composite() {
+        let mut obj =
+            PestDeserializer::parse(Rule::r#struct_body, false, "{ name: string; age: u32 }");
         let fields: Vec<(String, String)> = obj.deserialize().unwrap();
         assert_eq!(fields[0].0, "name");
         assert_eq!(fields[0].1, "string");
@@ -266,17 +312,14 @@ mod test {
         assert_eq!(fields[1].1, "u32");
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_newtype_struct_composite(adjust_case: bool) {
+    #[test]
+    fn test_newtype_struct_composite() {
         #[derive(Deserialize)]
         #[serde(rename = "struct_body")]
         struct StructBody(Vec<(String, String)>);
 
-        let mut obj = PestDeserializer::parse(
-            Rule::r#struct_body,
-            adjust_case,
-            "{ name: string; age: u32 }",
-        );
+        let mut obj =
+            PestDeserializer::parse(Rule::r#struct_body, false, "{ name: string; age: u32 }");
         let fields: StructBody = obj.deserialize().unwrap();
         assert_eq!(fields.0[0].0, "name");
         assert_eq!(fields.0[0].1, "string");
@@ -284,22 +327,22 @@ mod test {
         assert_eq!(fields.0[1].1, "u32");
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_spanned(adjust_case: bool) {
-        let mut obj = PestDeserializer::parse(Rule::ident, adjust_case, "Olimar");
+    #[test]
+    fn test_spanned() {
+        let mut obj = PestDeserializer::parse(Rule::ident, false, "Olimar");
         let span: Span = obj.peek().as_span().into();
         let val = obj.deserialize::<Spanned<String>>().unwrap();
         assert_eq!("Olimar", val.value);
         assert_eq!(span, val.span);
     }
 
-    #[apply(adjust_case_toggle)]
-    fn test_newtyped_ident(adjust_case: bool) {
+    #[test]
+    fn test_newtyped_ident() {
         #[derive(Deserialize, PartialEq)]
         #[serde(rename = "ident")]
 
         struct Ident(String);
-        let mut obj = PestDeserializer::parse(Rule::r#ident, adjust_case, "Olimar");
+        let mut obj = PestDeserializer::parse(Rule::r#ident, false, "Olimar");
         let st = obj.deserialize::<Ident>().unwrap();
         assert_eq!("Olimar", st.0);
     }

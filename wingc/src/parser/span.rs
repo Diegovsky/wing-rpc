@@ -16,6 +16,9 @@ impl Span {
     pub fn end(&self) -> usize {
         self.offset + self.length
     }
+    pub fn is_unspanned(&self) -> bool {
+        *self == Default::default()
+    }
 }
 
 impl From<Span> for Range<usize> {
@@ -63,7 +66,9 @@ impl<T: std::hash::Hash> std::hash::Hash for Spanned<T> {
 
 impl<T: PartialEq> PartialEq for Spanned<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        let span_eq =
+            (self.span.is_unspanned() || other.span.is_unspanned()) || (self.span.eq(&other.span));
+        span_eq && self.value == other.value
     }
 }
 

@@ -43,7 +43,7 @@ impl ParseItem for String {
 #[apply(impl_parse_composite)]
 #[rule(r#type)]
 fn parse(pairs: Pairs<Rule>) -> Type {
-    let tk = dbg!(pairs.peek().unwrap());
+    let tk = pairs.peek().unwrap();
     if tk.as_rule() == Rule::r#type {
         pairs.next_item::<Self>()?
     } else if tk.as_rule() == Rule::list_type {

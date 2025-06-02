@@ -4,7 +4,7 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 SEP = _{";" | "," }
 
-ident = {(LETTER | NUMBER | "_")+}
+ident = @{(LETTER | NUMBER | "_")+}
 list_type = {"["~ type ~ "]"}
 type = {ident | list_type}
 
@@ -12,7 +12,7 @@ struct_field = { ident ~ ":" ~ type}
 struct_body = {
     "{" ~ struct_field ~ (SEP ~ struct_field)* ~ (SEP)? ~ "}" |
     "{" ~ "}" |
-    ";"
+    &";"
 }
 struct = {"struct" ~ ident ~ struct_body}
 
@@ -23,7 +23,7 @@ enum_variant = {
 enum_body = {
     "{" ~ enum_variant ~ ((SEP)? ~ enum_variant)* ~ (SEP)? ~ "}" |
     "{" ~ "}" |
-    ";"
+    &";"
 }
 enum = { "enum" ~ ident ~ enum_body }
 

@@ -9,6 +9,7 @@ impl std::fmt::Display for Void {
 
 impl std::error::Error for Void {}
 impl serde::de::Error for Void {
+    #[track_caller]
     fn custom<T>(msg: T) -> Self
     where
         T: std::fmt::Display,

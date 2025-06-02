@@ -51,16 +51,20 @@ impl Args {
 
 fn main() -> R<()> {
     let args: Args = argh::from_env();
-    let mut emitter: Box<dyn Emitter> = args.get_emitter()?;
     let input = &args.input;
     if input.extension().map(|ext| ext != "wing").unwrap_or(true) {
         bail!("Input file is not a .wing file");
     }
     let input_data = std::fs::read_to_string(input).expect("Failed to read input file");
     let document = parse_document(&*input_data).expect("Failed to parse document");
-    if let Err(err) = analyze_errors(&document) {
-        bail!("{:?}", err.with_source_code(input_data));
+    if args.language.as_deref() == Some("tree") {
+        println!("{:#?}", document);
+        return Ok(());
     }
+    // if let Err(err) = analyze_errors(&document) {
+    //     bail!("{:?}", err.with_source_code(input_data));
+    // }
+    let mut emitter: Box<dyn Emitter> = args.get_emitter()?;
     let mut output: &mut dyn std::io::Write = if let Some(output) = args.output {
         &mut std::fs::File::create(output)
             .map(BufWriter::new)

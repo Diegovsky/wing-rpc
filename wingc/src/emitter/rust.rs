@@ -142,9 +142,9 @@ impl Emitter for RustEmitter {
         for ut in &document.user_types {
             self.register_ut(&ut.value);
         }
-        for (k, v) in &self.user_types {
-            println!("{k}: {}", v.name());
-        }
+        // for (k, v) in &self.user_types {
+        //     println!("{k}: {}", v.name());
+        // }
         for ut in document.user_types.iter() {
             self.emit_user_type(writer, ut)?;
         }

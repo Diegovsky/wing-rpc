@@ -94,7 +94,7 @@ impl<'a, 'de> Deserializer<'de> for &'a mut PestDeserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_string(self.peek_rule_name())
+        visitor.visit_string(self.adjust_case(&*self.peek_rule_name()))
     }
 
     // NOT SUPPORTED
@@ -249,14 +249,16 @@ impl<'de> SeqAccess<'de> for CompositeDe<'de> {
 
         match &mut self.composite {
             Composite::Struct { fields } => {
+                if fields.is_empty() {
+                    return Ok(None);
+                }
                 let (_, rest) = fields.split_first().unwrap();
-                // *fields = rest;
-                // if fst == "span" {
-                //     let span = Span::from(self.de.peek().as_span());
-                //     return seed.deserialize(span::span_de(span)).map(Some);
-                // }
+                *fields = rest;
             }
             Composite::Tuple { len } => {
+                if *len == 0 {
+                    return Ok(None);
+                }
                 *len -= 1;
             }
             Composite::Seq => (),
@@ -269,12 +271,13 @@ impl<'de> SeqAccess<'de> for CompositeDe<'de> {
 impl<'de> EnumAccess<'de> for &mut PestDeserializer<'de> {
     type Error = Void;
 
-    type Variant = Self;
+    type Variant = Self; //&mut PestDeserializer<'de>;
 
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
         V: serde::de::DeserializeSeed<'de>,
     {
+        dbg!(&self.pairs);
         let value = seed.deserialize(&mut *self)?;
         Ok((value, self))
     }
@@ -287,14 +290,15 @@ impl<'de> VariantAccess<'de> for &mut PestDeserializer<'de> {
         todo!()
     }
 
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    fn newtype_variant_seed<T>(mut self, seed: T) -> Result<T::Value, Self::Error>
     where
         T: serde::de::DeserializeSeed<'de>,
     {
+        // seed.deserialize(&mut self.inner())
         seed.deserialize(self)
     }
 
-    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    fn tuple_variant<V>(mut self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de>,
     {
@@ -302,7 +306,7 @@ impl<'de> VariantAccess<'de> for &mut PestDeserializer<'de> {
     }
 
     fn struct_variant<V>(
-        self,
+        mut self,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>

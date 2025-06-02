@@ -10,13 +10,13 @@ pub(crate) fn span_de<'de>(
         .into_deserializer()
 }
 
-pub(crate) struct SpannedDe<'de> {
-    de: PestDeserializer<'de>,
+pub(crate) struct SpannedDe<'a, 'de> {
+    de: &'a mut PestDeserializer<'de>,
     state: State,
 }
 
-impl<'de> SpannedDe<'de> {
-    pub(crate) fn new(de: PestDeserializer<'de>) -> Self {
+impl<'a, 'de> SpannedDe<'a, 'de> {
+    pub(crate) fn new(de: &'a mut PestDeserializer<'de>) -> Self {
         Self {
             state: State::Span(de.peek().as_span().into()),
             de,
@@ -30,7 +30,7 @@ enum State {
     End,
 }
 
-impl<'de> SimpleDe<'de> for SpannedDe<'de> {
+impl<'de> SimpleDe<'de> for SpannedDe<'_, 'de> {
     type Error = Void;
 
     fn deserialize_struct<V>(
@@ -48,7 +48,7 @@ impl<'de> SimpleDe<'de> for SpannedDe<'de> {
     }
 }
 
-impl<'de> SeqAccess<'de> for SpannedDe<'de> {
+impl<'de> SeqAccess<'de> for SpannedDe<'_, 'de> {
     type Error = Void;
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -61,7 +61,7 @@ impl<'de> SeqAccess<'de> for SpannedDe<'de> {
                 result
             }
             State::Value => {
-                let result = seed.deserialize(&mut self.de).map(Some);
+                let result = seed.deserialize(&mut *self.de).map(Some);
                 self.state = State::End;
                 result
             }
