@@ -13,9 +13,11 @@ use strum::{EnumString, IntoStaticStr};
 #[grammar = "./idl.pest"]
 pub(crate) struct WingParser;
 
+pub mod items;
+pub use items::*;
 mod rules;
-pub mod span;
 use rules::ParseItem;
+pub mod span;
 pub use span::{S, SVec};
 
 #[easy_ext::ext]
@@ -50,249 +52,11 @@ pub fn parse_document(text: &str) -> miette::Result<Document> {
     }
     Ok(doc.value)
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
-#[strum(serialize_all = "lowercase")]
-pub enum Builtin {
-    // Specific Int Sizes
-    U8,
-    U16,
-    U32,
-    U64,
-    USize,
-    I8,
-    I16,
-    I32,
-    I64,
-    ISize,
-
-    // General types
-    UInt,
-    Int,
-    F32,
-    F64,
-    Bool,
-    String,
-    Binary,
-}
-
-#[derive(Deserialize)]
-#[serde(rename = "Type")]
-enum TypeDe {
-    Ident(String),
-    ListType(Box<TypeDe>),
-}
-
-impl From<TypeDe> for Type {
-    fn from(value: TypeDe) -> Self {
-        match value {
-            TypeDe::ListType(lst) => Self::List(Box::new((*lst).into())),
-            TypeDe::Ident(ident) => match Builtin::from_str(&*ident).ok() {
-                Some(builtin) => Self::Builtin(builtin),
-                None => Self::User(ident),
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Deserialize)]
-#[serde(from = "TypeDe")]
-pub enum Type {
-    Builtin(Builtin),
-    List(Box<Type>),
-    User(String),
-}
-
-impl std::fmt::Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Builtin(bt) => write!(f, "{}", <&str>::from(bt)),
-            Self::List(inner) => write!(f, "List<{}>", inner),
-            Self::User(name) => write!(f, "{}", name),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, From, Deserialize)]
-pub enum EnumVariant {
-    NamedVariant(StructField),
-    UserType(UserType),
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Enum {
-    pub name: String,
-    pub definitions: SVec<EnumVariant>,
-}
-
-impl Struct {
-    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
-        std::iter::empty()
-    }
-}
-
-impl UserType {
-    pub fn children_user_types<'a>(&'a self) -> Vec<&'a UserType> {
-        match self {
-            UserType::Enum(en) => en.children_user_types().collect(),
-            UserType::Struct(st) => st.children_user_types().collect(),
-        }
-    }
-}
-
-impl Enum {
-    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
-        self.definitions.iter().filter_map(|def| match &def.value {
-            EnumVariant::UserType(ut) => Some(ut),
-            EnumVariant::NamedVariant(_) => None,
-        })
-    }
-    pub fn variants(&self) -> impl Iterator<Item = S<StructField>> {
-        self.definitions.iter().map(|var| {
-            var.as_ref().map(|var| match var {
-                EnumVariant::NamedVariant(f) => f.clone(),
-                EnumVariant::UserType(ut) => StructField {
-                    name: ut.name().into(),
-                    typ: Type::User(ut.name().into()),
-                },
-            })
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct StructField {
-    pub name: String,
-    pub typ: Type,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Struct {
-    pub name: String,
-    pub fields: SVec<StructField>,
-}
-
-#[derive(Debug, Clone, From, PartialEq, Deserialize)]
-pub enum UserType {
-    Struct(S<Struct>),
-    Enum(S<Enum>),
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Document {
-    pub user_types: SVec<UserType>,
-}
-
-impl Type {
-    pub fn as_user(&self) -> Option<&str> {
-        if let Type::User(tp) = self {
-            Some(tp)
-        } else {
-            None
-        }
-    }
-}
-impl UserType {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Struct(st) => &st.name,
-            Self::Enum(en) => &en.name,
-        }
-    }
-    pub fn children_types<'a>(&'a self) -> impl Iterator<Item = S<Type>> {
-        let iter: Box<dyn Iterator<Item = S<StructField>>> = match self {
-            Self::Struct(st) => Box::new(st.fields.iter().cloned()),
-            Self::Enum(en) => Box::new(en.variants()),
-        };
-        iter.map(|fd| fd.as_ref().map(|fd| fd.typ.clone()))
-    }
-    pub fn is_empty(&self) -> bool {
-        match self {
-            UserType::Struct(st) => st.fields.is_empty(),
-            UserType::Enum(en) => en.definitions.is_empty(),
-        }
-    }
-}
-
-// #[cfg(test)]
-// pub mod test {
-
-//     use super::span::Spanned;
-//     use super::*;
-
-//     impl From<Builtin> for Type {
-//         fn from(val: Builtin) -> Self {
-//             Type::Builtin(val)
-//         }
-//     }
-
-//     impl From<Struct> for UserType {
-//         fn from(value: Struct) -> Self {
-//             UserType::Struct(S::new_unspanned(value))
-//         }
-//     }
-
-//     impl From<Enum> for UserType {
-//         fn from(value: Enum) -> Self {
-//             UserType::Enum(S::new_unspanned(value))
-//         }
-//     }
-
-//     impl From<&str> for Type {
-//         fn from(val: &str) -> Self {
-//             Type::User(s(val))
-//         }
-//     }
-//     impl StructField {
-//         pub fn new(name: impl Into<String>, type_: impl Into<Type>) -> Self {
-//             Self {
-//                 name: name.into(),
-//                 typ: type_.into(),
-//             }
-//         }
-//     }
-
-//     impl Type {
-//         fn list(inner: impl Into<Type>) -> Self {
-//             Self::List(Box::new(inner.into()))
-//         }
-//     }
-
-//     fn s(text: &'_ str) -> String {
-//         text.to_owned()
-//     }
-
-//     macro_rules! assert_parse {
-//         ($left:expr, $right:expr) => {
-//             assert_parse!($left, $right, Document)
-//         };
-
-//         ($left:expr, $right:expr, $ty:ty) => {{
-//             let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
-//             let val = pairs.next_item::<$ty>().unwrap();
-//             assert_eq!(val, $right);
-//             // let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
-//             // let obj = de.deserialize::<$ty>().unwrap();
-//             // assert_eq!(obj, val);
-//         }};
-//     }
-
-//     macro_rules! svec {
-//         ($($arg:expr),* $(,)?) => {
-//             vec![
-//                 $(Spanned::new_unspanned($arg.into())),*
-//             ]
-//         };
-//     }
-// }
-//
-
 #[cfg(test)]
 mod test {
     use super::*;
 
     use super::span::Spanned;
-    use super::*;
 
     impl From<Builtin> for Type {
         fn from(val: Builtin) -> Self {
@@ -342,9 +106,9 @@ mod test {
         };
 
         ($left:expr, $right:expr, $ty:ty) => {{
-            let mut de = PestDeserializer::parse(<$ty>::RULE, true, $left);
-            let obj = de.deserialize::<$ty>().unwrap();
-            assert_eq!(obj, $right);
+            let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
+            let val = pairs.next_item::<$ty>().unwrap();
+            assert_eq!(val, $right);
         }};
     }
     macro_rules! svec {
@@ -354,8 +118,6 @@ mod test {
             ]
         };
     }
-
-    use crate::pest_deserializer::PestDeserializer;
 
     #[test]
     fn parse_type() {
