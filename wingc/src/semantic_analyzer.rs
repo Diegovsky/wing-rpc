@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, iter::once};
 
 use miette::{Diagnostic, LabeledSpan};
 use nucleo_matcher::{Matcher, pattern::Atom};
@@ -42,10 +42,14 @@ impl Diagnostic for Error {
     fn labels(&self) -> Option<Box<dyn Iterator<Item = miette::LabeledSpan> + '_>> {
         match self {
             Self::UndefinedType {
-                name,
-                suggestion: Some(sugg),
-                ..
-            } => spanned_labels([name.as_ref().map(|_| format!("Did you mean '{sugg}'?"))]),
+                name, suggestion, ..
+            } => {
+                let label = match suggestion {
+                    Some(sugg) => format!("Did you mean '{sugg}'?"),
+                    None => "Used here".into(),
+                };
+                spanned_labels([name.as_ref().map(|_| label)])
+            }
             Self::RepeatedEnumVariant { variant, parent } => spanned_labels([
                 variant.as_ref().map(|_| "Here".into()),
                 parent.as_ref().map(|_| "In this enum".into()),
@@ -97,7 +101,12 @@ fn fuzzy_match<'a>(
 }
 
 fn analyze_missing_types(document: &Document) -> Errors {
-    let known_types: HashSet<_> = document.user_types.iter().map(|ut| ut.name()).collect();
+    let known_types: HashSet<_> = document
+        .user_types
+        .iter()
+        .flat_map(|ut| once(ut.as_ref().value).chain(ut.children_user_types().into_iter()))
+        .map(|ut| ut.name())
+        .collect();
     let mut matcher = Matcher::default();
     document
         .user_types

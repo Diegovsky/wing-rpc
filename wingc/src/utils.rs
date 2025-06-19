@@ -2,17 +2,8 @@ use std::path::Path;
 
 use crate::{
     emitter::{Emitter, PyEmitter, RustEmitter},
-    parser,
+    parser, semantic_analyzer,
 };
-
-macro_rules! decl_test {
-    ($name:ident) => {
-        #[test]
-        fn $name() {
-            test(stringify!($name))
-        }
-    };
-}
 
 #[derive(Clone, Copy)]
 pub enum Lang {
@@ -28,10 +19,11 @@ pub enum Mode {
 
 const LANGS: &[Lang] = &[Lang::Rust, Lang::Python];
 
-pub fn test(cwd: impl AsRef<Path>, name: &str, mode: Mode) {
-    let cwd = cwd.as_ref();
+pub fn test(name: &str, mode: Mode) {
+    let cwd = Path::new("test-files/");
     let input = std::fs::read_to_string(cwd.join(format!("{name}.wing"))).unwrap();
     let doc = parser::parse_document(&input).expect("Failed to parse document");
+    semantic_analyzer::analyze_errors(&doc).unwrap();
     let mut output = Vec::new();
     for lang in LANGS {
         let (mut emitter, ext): (Box<dyn Emitter>, &str) = match lang {

@@ -33,7 +33,7 @@ impl RustEmitter {
             Type::Builtin(Builtin::F32 | Builtin::F64) => false,
             Type::Builtin(_) => true,
             Type::List(tp) => self.is_partialeq(tp),
-            Type::User(ut) => self.is_ut_partialeq(&self.user_types[dbg!(ut)]),
+            Type::User(ut) => self.is_ut_partialeq(&self.user_types[ut]),
         }
     }
     fn get_type_name(&self, typ: &Type) -> String {

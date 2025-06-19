@@ -61,9 +61,9 @@ fn main() -> R<()> {
         println!("{:#?}", document);
         return Ok(());
     }
-    // if let Err(err) = analyze_errors(&document) {
-    //     bail!("{:?}", err.with_source_code(input_data));
-    // }
+    if let Err(err) = analyze_errors(&document) {
+        bail!("{:?}", err.with_source_code(input_data));
+    }
     let mut emitter: Box<dyn Emitter> = args.get_emitter()?;
     let mut output: &mut dyn std::io::Write = if let Some(output) = args.output {
         &mut std::fs::File::create(output)

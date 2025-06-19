@@ -21,7 +21,10 @@ fn match_rule<'i, 't>(rule: Rule, pair: &Pair<'i, Rule>) -> miette::Result<()> {
     if rule == pair.as_rule() {
         Ok(())
     } else {
-        unreachable!("Invalid token sequence: {:?};\nExpected: {:?}", pair, rule)
+        unreachable!(
+            "Invalid token sequence. Expected: {:#?}. Got: {:#?};\n",
+            rule, pair
+        )
     }
 }
 pub trait ParseItem: Sized {
@@ -72,6 +75,7 @@ fn parse(pairs: Pairs<Rule>) -> StructField {
 fn parse(pairs: Pairs<Rule>) -> SVec<StructField> {
     pairs.collect_items()?
 }
+
 #[apply(impl_parse_composite)]
 #[rule(r#struct)]
 fn parse(pairs: Pairs<Rule>) -> Struct {

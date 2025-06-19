@@ -17,10 +17,10 @@ pub enum Mode {
 ///
 /// This is just a light abstraction over [`std::net::TcpListener`].
 /// ```no_run
-/// use wing_rpc::server::TcpServer;
+/// use wing_rpc::server::{TcpServer, Mode};
 ///
 /// let server = TcpServer::bind("localhost:6000").expect("Failed to bind");
-/// let peer = server.accept().expect("Failed to accept peer");
+/// let peer = server.accept(Mode::Blocking).expect("Failed to accept peer");
 /// ```
 #[derive(Debug)]
 pub struct TcpServer(TcpListener);

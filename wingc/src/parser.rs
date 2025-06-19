@@ -1,12 +1,9 @@
-use std::str::FromStr;
-
 use derive_more::From;
 use pest::{
     Parser, RuleType,
     iterators::{Pair, Pairs},
 };
 use pest_derive::Parser;
-use serde::Deserialize;
 use strum::{EnumString, IntoStaticStr};
 
 #[derive(Parser, Debug, Clone, PartialEq)]
@@ -108,7 +105,7 @@ mod test {
         ($left:expr, $right:expr, $ty:ty) => {{
             let mut pairs = WingParser::parse(<$ty>::RULE, $left).unwrap();
             let val = pairs.next_item::<$ty>().unwrap();
-            assert_eq!(val, $right);
+            assert_eq!(val, $right, "While parsing {}", stringify!($left));
         }};
     }
     macro_rules! svec {
@@ -268,6 +265,24 @@ mod test {
     #[test]
     fn parse_list_nested() {
         assert_parse!("[[int]]", Type::list(Type::list(Builtin::Int)), Type);
+    }
+
+    #[test]
+    fn test_list_alternative_syntax() {
+        assert_parse!("List[string]", Type::list(Builtin::String), Type);
+        assert_parse!("List<string>", Type::list(Builtin::String), Type);
+        assert_parse!("list[string]", Type::list(Builtin::String), Type);
+        assert_parse!("list<string>", Type::list(Builtin::String), Type);
+        assert_parse!(
+            "list[[string]]",
+            Type::list(Type::list(Builtin::String)),
+            Type
+        );
+        assert_parse!(
+            "list<[string]>",
+            Type::list(Type::list(Builtin::String)),
+            Type
+        );
     }
 
     #[test]

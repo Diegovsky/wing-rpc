@@ -914,7 +914,6 @@ dependencies = [
  "rapidfuzz",
  "rstest",
  "rstest_reuse",
- "serde",
  "strum",
  "thiserror 2.0.12",
 ]
