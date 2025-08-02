@@ -1,7 +1,5 @@
 struct Person {
 	name: string,
 	age: u8,
-	address: Address {
-		
-	}
+	address: struct Address { },
 }

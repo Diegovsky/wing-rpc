@@ -29,4 +29,6 @@ Disclaimer: This doc is a work in-progress, but I plan to elaborate further late
   - `pywing-rpc`: Python library that implements the necessary glue to "speak" wing-rpc
   - `wing-rpc`: Rust crate that does the same thing
   - `wingc`: Rust crate that implements all of the compiler's internals, including language plugins
+    - It contains a binary *but it is NOT the compiler!*. It is used to regenerate tests!
   - `wingc-cli`: Rust crate that thinly provides a CLI to the `wingc` crate. **You'll need to use this to generate language glue code**
+    - This is what you'll want to use!

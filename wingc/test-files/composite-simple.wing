@@ -1,0 +1,25 @@
+
+
+struct Result {
+	id: usize,
+	title: string,
+	description: string,
+}
+
+struct ByName {
+	name: string,
+}
+
+struct ById {
+	id: usize,
+}
+
+enum Search {
+	ByName: ByName
+	ById: ById
+}
+
+enum Message {
+	Search: ById
+	results: [Result]
+}

@@ -23,7 +23,9 @@ pub fn test(name: &str, mode: Mode) {
     let cwd = Path::new("test-files/");
     let input = std::fs::read_to_string(cwd.join(format!("{name}.wing"))).unwrap();
     let doc = parser::parse_document(&input).expect("Failed to parse document");
-    semantic_analyzer::analyze_errors(&doc).unwrap();
+    if let Err(e) = semantic_analyzer::analyze_errors(&doc) {
+        panic!("Got error while analyzing {name}: {e}");
+    }
     let mut output = Vec::new();
     for lang in LANGS {
         let (mut emitter, ext): (Box<dyn Emitter>, &str) = match lang {

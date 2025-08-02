@@ -33,8 +33,8 @@ class Message(Enum):
     __match_args__: ClassVar[tuple] = ('tag', 'value',)
     class Tag(StrEnum):
         Search = 'Search'
-        Results = 'Results'
+        results = 'results'
     tag: Tag
-    value: Search | list[Result]
+    value: ById | list[Result]
 
 

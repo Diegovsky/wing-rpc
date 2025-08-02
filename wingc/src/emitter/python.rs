@@ -34,6 +34,7 @@ impl PyEmitter {
                     format!(r"'{name}'")
                 }
             }
+            Type::UserInline(user) => user.name().to_owned(),
             Type::List(inner) => {
                 format!("list[{}]", self.get_type_name(inner))
             }
@@ -118,9 +119,6 @@ impl PyEmitter {
     }
     fn emit_user_type(&mut self, f: &mut dyn Write, utype: &UserType) -> R {
         // Emit inner children types
-        for child in utype.children_user_types() {
-            self.emit_user_type(f, child)?;
-        }
         self.ident(f)?;
         write!(
             f,
@@ -166,7 +164,9 @@ impl Emitter for PyEmitter {
     fn emit(&mut self, document: &crate::parser::Document, writer: &mut dyn std::io::Write) -> R {
         self.emit_header(writer)?;
         for utype in document.user_types.iter() {
-            self.emit_user_type(writer, utype)?;
+            for child in utype.children_user_types() {
+                self.emit_user_type(writer, child)?;
+            }
         }
         Ok(())
     }

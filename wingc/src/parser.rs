@@ -267,23 +267,23 @@ mod test {
         assert_parse!("[[int]]", Type::list(Type::list(Builtin::Int)), Type);
     }
 
-    #[test]
-    fn test_list_alternative_syntax() {
-        assert_parse!("List[string]", Type::list(Builtin::String), Type);
-        assert_parse!("List<string>", Type::list(Builtin::String), Type);
-        assert_parse!("list[string]", Type::list(Builtin::String), Type);
-        assert_parse!("list<string>", Type::list(Builtin::String), Type);
-        assert_parse!(
-            "list[[string]]",
-            Type::list(Type::list(Builtin::String)),
-            Type
-        );
-        assert_parse!(
-            "list<[string]>",
-            Type::list(Type::list(Builtin::String)),
-            Type
-        );
-    }
+    // #[test]
+    // fn test_list_alternative_syntax() {
+    //     assert_parse!("List[string]", Type::list(Builtin::String), Type);
+    //     assert_parse!("List<string>", Type::list(Builtin::String), Type);
+    //     assert_parse!("list[string]", Type::list(Builtin::String), Type);
+    //     assert_parse!("list<string>", Type::list(Builtin::String), Type);
+    //     assert_parse!(
+    //         "list[[string]]",
+    //         Type::list(Type::list(Builtin::String)),
+    //         Type
+    //     );
+    //     assert_parse!(
+    //         "list<[string]>",
+    //         Type::list(Type::list(Builtin::String)),
+    //         Type
+    //     );
+    // }
 
     #[test]
     fn test_simple_enum() {

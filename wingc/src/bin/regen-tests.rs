@@ -24,10 +24,11 @@ fn main() {
         tests.push(format!(
             r#"
 #[test]
-fn {name}(){{
+fn {}(){{
     test("{name}", Mode::Test);
 }}
-"#
+"#,
+            name.replace("-", "_")
         ))
     }
     std::fs::write(root.join("tests/mod.rs"), tests.join("\n")).unwrap();

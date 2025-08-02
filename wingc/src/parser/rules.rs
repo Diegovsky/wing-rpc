@@ -51,6 +51,8 @@ fn parse(pairs: Pairs<Rule>) -> Type {
         pairs.next_item::<Self>()?
     } else if tk.as_rule() == Rule::list_type {
         Self::List(Box::new(pairs.next_item()?))
+    } else if tk.as_rule() == Rule::user_type {
+        Self::UserInline(pairs.next_item()?)
     } else {
         let tname = pairs.next2().as_str();
         tname

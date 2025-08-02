@@ -34,11 +34,13 @@ impl RustEmitter {
             Type::Builtin(_) => true,
             Type::List(tp) => self.is_partialeq(tp),
             Type::User(ut) => self.is_ut_partialeq(&self.user_types[ut]),
+            Type::UserInline(user) => self.is_ut_partialeq(user),
         }
     }
     fn get_type_name(&self, typ: &Type) -> String {
         match typ {
             Type::User(name) => name.to_string(),
+            Type::UserInline(user) => user.name().to_owned(),
             Type::List(inner) => {
                 format!("Vec<{}>", self.get_type_name(inner))
             }
@@ -65,10 +67,6 @@ impl RustEmitter {
         }
     }
     fn emit_user_type(&mut self, f: &mut dyn Write, ut: &UserType) -> R {
-        // Emit inner children types
-        for child in ut.children_user_types() {
-            self.emit_user_type(f, child)?;
-        }
         let mut derives = vec!["Debug", "Clone"];
         if self.is_ut_partialeq(ut) {
             derives.push("PartialEq");
@@ -104,9 +102,13 @@ impl RustEmitter {
                             self.indent(f)?;
                             let name = &*field.name;
                             let tp = self.get_type_name(&field.typ);
-                            write!(f, "{}({}),\n", name, tp)?;
+                            write!(f, "{name}({tp}),\n")?;
                         }
-                        _ => (),
+                        EnumVariant::UserType(ut) => {
+                            self.indent(f)?;
+                            let name = ut.name();
+                            write!(f, "{name}({name}),\n")?;
+                        }
                     }
                 }
                 self.indent -= 1;
@@ -125,9 +127,8 @@ impl RustEmitter {
     }
 
     fn register_ut(&mut self, ut: &UserType) {
-        self.user_types.insert(ut.name().into(), ut.clone());
         for child in ut.children_user_types() {
-            self.register_ut(child);
+            self.user_types.insert(child.name().into(), child.clone());
         }
     }
 }
@@ -139,14 +140,18 @@ impl Emitter for RustEmitter {
         self.emit_header(writer)?;
         self.user_types.clear();
 
-        for ut in &document.user_types {
+        for ut in document.user_types.iter() {
             self.register_ut(&ut.value);
         }
+
         // for (k, v) in &self.user_types {
         //     println!("{k}: {}", v.name());
         // }
+
         for ut in document.user_types.iter() {
-            self.emit_user_type(writer, ut)?;
+            for child in ut.children_user_types() {
+                self.emit_user_type(writer, child)?;
+            }
         }
         Ok(())
     }

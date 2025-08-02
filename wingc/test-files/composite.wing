@@ -14,5 +14,5 @@ enum Message {
 			id: usize,
 		}
 	}
-	results: [Result]
+	Results: [Result]
 }

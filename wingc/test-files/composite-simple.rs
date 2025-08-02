@@ -43,8 +43,8 @@ impl<'a> WingMessage<'a> for Search {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Message {
-    Search(Search),
-    Results(Vec<Result>),
+    Search(ById),
+    results(Vec<Result>),
 }
 
 impl<'a> WingMessage<'a> for Message {

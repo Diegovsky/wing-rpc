@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, EnumString, IntoStaticStr)]
@@ -24,11 +26,12 @@ pub enum Builtin {
     String,
     Binary,
 }
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Builtin(Builtin),
     List(Box<Type>),
     User(String),
+    UserInline(UserType),
 }
 
 #[derive(Debug, Clone, PartialEq, From)]
@@ -71,31 +74,56 @@ impl std::fmt::Display for Type {
             Self::Builtin(bt) => write!(f, "{}", <&str>::from(bt)),
             Self::List(inner) => write!(f, "List<{}>", inner),
             Self::User(name) => write!(f, "{}", name),
+            Self::UserInline(user) => write!(f, "{}", user.name()),
         }
+    }
+}
+use easy_ext::ext;
+#[ext]
+impl<T> Vec<T> {
+    fn with(mut self, val: T) -> Self {
+        self.push(val);
+        self
     }
 }
 
 impl Struct {
-    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
-        std::iter::empty()
+    pub fn children_user_types<'a>(&'a self) -> Vec<&'a UserType> {
+        let val = self
+            .fields
+            .iter()
+            .flat_map(|def| match &def.typ {
+                Type::UserInline(user) => user.children_user_types(),
+                _ => vec![],
+            })
+            .collect();
+        val
     }
 }
 
 impl UserType {
     pub fn children_user_types<'a>(&'a self) -> Vec<&'a UserType> {
         match self {
-            UserType::Enum(en) => en.children_user_types().collect(),
-            UserType::Struct(st) => st.children_user_types().collect(),
+            UserType::Enum(en) => en.children_user_types(),
+            UserType::Struct(st) => st.children_user_types(),
         }
+        .with(self)
     }
 }
 
 impl Enum {
-    pub fn children_user_types<'a>(&'a self) -> impl Iterator<Item = &'a UserType> {
-        self.definitions.iter().filter_map(|def| match &def.value {
-            EnumVariant::UserType(ut) => Some(ut),
-            EnumVariant::NamedVariant(_) => None,
-        })
+    pub fn children_user_types<'a>(&'a self) -> Vec<&'a UserType> {
+        self.definitions
+            .iter()
+            .flat_map(|def| match &def.value {
+                EnumVariant::UserType(ut) => ut.children_user_types(),
+                EnumVariant::NamedVariant(StructField {
+                    typ: Type::UserInline(user),
+                    ..
+                }) => user.children_user_types(),
+                _ => vec![],
+            })
+            .collect()
     }
     pub fn variants(&self) -> impl Iterator<Item = S<StructField>> {
         self.definitions.iter().map(|var| {

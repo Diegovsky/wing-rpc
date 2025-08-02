@@ -1,11 +1,24 @@
-use wingc::utils::{Mode, test};
+use wingc::utils::{test, Mode};
 
 #[test]
-fn simple() {
+fn simple(){
     test("simple", Mode::Test);
 }
 
+
 #[test]
-fn composite() {
+fn nested(){
+    test("nested", Mode::Test);
+}
+
+
+#[test]
+fn composite_simple(){
+    test("composite-simple", Mode::Test);
+}
+
+
+#[test]
+fn composite(){
     test("composite", Mode::Test);
 }

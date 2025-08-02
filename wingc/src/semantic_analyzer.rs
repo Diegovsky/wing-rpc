@@ -81,7 +81,7 @@ fn fuzzy_match<'a>(
                 rapidfuzz::distance::jaro_winkler::similarity(search.chars(), candidate.chars()),
             )
         })
-        .filter(|(_, val)| *val > 0.90)
+        .filter(|(_, val)| *val > 0.80)
         .collect::<Vec<_>>();
     if !candidates.is_empty() {
         candidates.sort_by(|(_, val), (_, val2)| val.total_cmp(val2));
@@ -104,9 +104,11 @@ fn analyze_missing_types(document: &Document) -> Errors {
     let known_types: HashSet<_> = document
         .user_types
         .iter()
-        .flat_map(|ut| once(ut.as_ref().value).chain(ut.children_user_types().into_iter()))
+        .flat_map(|ut| ut.children_user_types())
+        .chain(document.user_types.iter().map(|ut| &ut.value))
         .map(|ut| ut.name())
         .collect();
+
     let mut matcher = Matcher::default();
     document
         .user_types
